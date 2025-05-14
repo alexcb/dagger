@@ -11,6 +11,8 @@ import (
 	"github.com/moby/buildkit/frontend"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/solver/pb"
+	solverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 )
@@ -49,6 +51,47 @@ func RegisterCustomOp(op CustomOp) {
 	customOps[op.Name()] = op
 }
 
+// XXX: from llb/state.go
+type output struct {
+	vertex   llb.Vertex
+	getIndex func() (solverpb.OutputIndex, error)
+	err      error
+}
+
+func (o *output) ToInput(ctx context.Context, c *llb.Constraints) (*pb.Input, error) {
+	if o.err != nil {
+		return nil, o.err
+	}
+	var index pb.OutputIndex
+	if o.getIndex != nil {
+		var err error
+		index, err = o.getIndex()
+		if err != nil {
+			return nil, err
+		}
+	}
+	dgst, _, _, _, err := o.vertex.Marshal(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.Input{Digest: dgst, Index: index}, nil
+}
+
+func (o *output) Vertex(context.Context, *llb.Constraints) llb.Vertex {
+	return o.vertex
+}
+
+func StateIdx(st llb.State, idx int) llb.State {
+	// XXX: we don't use async anywhere? so these are ignored i think
+	vtx := st.Output().Vertex(context.TODO(), nil)
+	return llb.NewState(&output{
+		vertex: vtx,
+		getIndex: func() (solverpb.OutputIndex, error) {
+			return pb.OutputIndex(idx), nil
+		},
+	})
+}
+
 func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...llb.ConstraintsOpt) (llb.State, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -70,18 +113,19 @@ func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...
 
 	// pre-populate a reasonable underlying representation that has some inputs
 	var a *llb.FileAction = llb.Rm("/" + id.Encoded())
+	// fmt.Println("inputs", len(inputs), inputs)
 	for _, input := range inputs {
-		if a == nil {
-			a = llb.Copy(input, "/", "/")
-		} else {
-			a = a.Copy(input, "/", "/")
-		}
+		// XXX: if input is llb.Scratch, then we have no output, so it doesn't show in the inputs
+		a = a.Copy(input, "/", "/")
 	}
 	st := llb.Scratch().File(a)
 	customOpOpt, err := opWrapped.AsConstraintsOpt()
 	if err != nil {
 		return llb.State{}, fmt.Errorf("constraints opt: %w", err)
 	}
+
+	// vtx := st.Output().Vertex(ctx, nil)
+	// fmt.Println("inputs", len(vtx.Inputs()), vtx.Inputs())
 
 	marshalOpts := append([]llb.ConstraintsOpt{customOpOpt}, opts...)
 	def, err := st.Marshal(ctx, marshalOpts...)

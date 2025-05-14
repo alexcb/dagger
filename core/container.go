@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -58,7 +59,8 @@ type Container struct {
 	Query *Query
 
 	// The container's root filesystem.
-	FS *pb.Definition
+	FS     *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
 
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig
@@ -170,6 +172,26 @@ func (container *Container) Clone() *Container {
 	return &cp
 }
 
+var _ dagql.OnReleaser = (*Container)(nil)
+
+func (ctr *Container) OnRelease(ctx context.Context) error {
+	if ctr.Result != nil {
+		err := ctr.Result.Release(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	for _, mount := range ctr.Mounts {
+		if mount.Result != nil {
+			err := mount.Result.Release(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
 // provided via the API. It primarily exists to distinguish an unspecified
 // ownership from UID/GID 0 (root) ownership.
@@ -229,6 +251,7 @@ func (container *Container) MetaState() (*llb.State, error) {
 type ContainerMount struct {
 	// The source of the mount.
 	Source *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
 
 	// A path beneath the source to scope the mount to.
 	SourcePath string

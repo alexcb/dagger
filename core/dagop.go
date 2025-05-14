@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -14,6 +15,7 @@ import (
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
@@ -24,6 +26,7 @@ import (
 func init() {
 	buildkit.RegisterCustomOp(FSDagOp{})
 	buildkit.RegisterCustomOp(RawDagOp{})
+	buildkit.RegisterCustomOp(ContainerDagOp{})
 }
 
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
@@ -361,4 +364,211 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 		return err
 	}
 	return f(dir)
+}
+
+func NewContainerDagOp(
+	ctx context.Context,
+	id *call.ID,
+	ctr *Container,
+) (*Container, error) {
+	dagop := &ContainerDagOp{
+		ID:     id,
+		Mounts: make([]string, 0, len(ctr.Mounts)),
+	}
+	inputs := make([]llb.State, 0, len(ctr.Mounts))
+
+	rootMount, err := defToState(ctr.FS)
+	if err != nil {
+		return nil, err
+	}
+	inputs = append(inputs, rootMount)
+	for _, mount := range ctr.Mounts {
+		subMount, err := defToState(mount.Source)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, subMount)
+
+		dagop.Mounts = append(dagop.Mounts, mount.Target)
+	}
+
+	st, err := newContainerDagOp(ctx, dagop, inputs)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr = ctr.Clone()
+
+	def, err := st.Marshal(ctx, llb.Platform(ctr.Platform.Spec()))
+	if err != nil {
+		return nil, err
+	}
+	ctr.FS = def.ToPB()
+
+	for i, mount := range ctr.Mounts {
+		st := buildkit.StateIdx(st, i+1)
+		def, err := st.Marshal(ctx, llb.Platform(ctr.Platform.Spec()))
+		if err != nil {
+			return nil, err
+		}
+		mount.Source = def.ToPB()
+		ctr.Mounts[i] = mount
+	}
+
+	return ctr, nil
+}
+
+func newContainerDagOp(
+	ctx context.Context,
+	dagop *ContainerDagOp,
+	inputs []llb.State,
+) (llb.State, error) {
+	if dagop.ID == nil {
+		return llb.State{}, fmt.Errorf("dagop ID is nil")
+	}
+	if len(inputs) != 1+len(dagop.Mounts) {
+		return llb.State{}, fmt.Errorf("mount count did not match %d != %d", len(inputs), 1+len(dagop.Mounts))
+	}
+
+	var t Container
+	requiredType := t.Type().NamedType
+	if dagop.ID.Type().NamedType() != requiredType {
+		return llb.State{}, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, dagop.ID.Type().NamedType())
+	}
+
+	return newDagOpLLB(ctx, dagop, dagop.ID, inputs)
+}
+
+type ContainerDagOp struct {
+	ID *call.ID
+
+	// XXX: this currently only includes destinations
+	// the other info is also relevant :eyes:
+	Mounts []string
+
+	// Data is any additional data that should be passed to the dagop. It does
+	// not contribute to the cache key.
+	Data any
+
+	// utility values set in the context of an Exec
+	g   bksession.Group
+	opt buildkit.OpOpts
+
+	inputs []solver.Result
+}
+
+func (op ContainerDagOp) GetRootMount() bkcache.ImmutableRef {
+	input := op.inputs[0]
+	return input.Sys().(*worker.WorkerRef).ImmutableRef
+}
+
+func (op ContainerDagOp) GetMount(path string) bkcache.ImmutableRef {
+	idx := slices.Index(op.Mounts, path)
+	if idx == -1 {
+		panic(fmt.Sprintf("mount %q not present", path))
+	}
+	input := op.inputs[1+idx]
+	return input.Sys().(*worker.WorkerRef).ImmutableRef
+}
+
+func (op ContainerDagOp) Name() string {
+	return "dagop.ctr"
+}
+
+func (op ContainerDagOp) Backend() buildkit.CustomOpBackend {
+	return &op
+}
+
+func (op ContainerDagOp) Group() bksession.Group {
+	return op.g
+}
+
+func (op ContainerDagOp) Digest() (digest.Digest, error) {
+	opData, err := json.Marshal(op.Data)
+	if err != nil {
+		return "", err
+	}
+	return digest.FromString(strings.Join([]string{
+		op.ID.Digest().String(),
+		strings.Join(op.Mounts, "\t"),
+		string(opData),
+	}, "+")), nil
+}
+
+func (op ContainerDagOp) CacheKey(ctx context.Context) (key digest.Digest, err error) {
+	// XXX: will need proper cache map control here
+	return op.Digest()
+}
+
+func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
+	if len(inputs) != 1+len(op.Mounts) {
+		return nil, fmt.Errorf("input count did not match %d != %d", len(inputs), 1+len(op.Mounts))
+	}
+
+	op.g = g
+	op.opt = opt
+	op.inputs = inputs
+
+	fmt.Println("starting exec")
+
+	// XXX: can we somehow populate result *before* call? that would be a nice easy way to get the inputs
+	obj, err := opt.Server.Load(withDagOpContext(ctx, op), op.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("finished load")
+
+	switch inst := obj.(type) {
+	case dagql.Instance[*Container]:
+		refs := make([]solver.Result, 0, 1+len(inst.Self.Mounts))
+		if inst.Self.Result != nil {
+			fmt.Println("getting result")
+			ref := worker.NewWorkerRefResult(inst.Self.Result.Clone(), opt.Worker)
+			refs = append(refs, ref)
+		} else {
+			res, err := inst.Self.Evaluate(ctx)
+			if err != nil {
+				return nil, err
+			}
+			ref, err := res.Ref.Result(ctx)
+			if err != nil {
+				return nil, err
+			}
+			refs = append(refs, ref)
+		}
+
+		// XXX: a lot of this can go into core/container.go
+		bk, err := inst.Self.Query.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+		for _, mount := range inst.Self.Mounts {
+			if mount.Result != nil {
+				fmt.Println("getting mount result")
+				ref := worker.NewWorkerRefResult(mount.Result.Clone(), opt.Worker)
+				refs = append(refs, ref)
+			} else {
+				res, err := bk.Solve(ctx, bkgw.SolveRequest{
+					Evaluate:   true,
+					Definition: mount.Source,
+				})
+				if err != nil {
+					return nil, err
+				}
+				ref, err := res.Ref.Result(ctx)
+				if err != nil {
+					return nil, err
+				}
+				refs = append(refs, ref)
+			}
+		}
+
+		fmt.Println("refs", refs)
+		return refs, nil
+
+	default:
+		// shouldn't happen, should have errored in DagLLB already
+		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)
+	}
 }

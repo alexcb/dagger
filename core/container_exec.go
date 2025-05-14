@@ -346,6 +346,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	// set image ref to empty string
 	container.ImageRef = ""
 
+	// TODO:
+	// - immediately unmarshal llb, and run, see ExecOp.Exec
+	// - copy paste code through, remove llb piece-by-piece (e.g. so instead of
+	//   reading the mounts directly out of the llb, just create executor.Mounts
+	//   directly)
+	// - keep going until no more llb read/writes, and remove LLB conversion
+	// - keep worker abstraction... for now. need to discuss with sipsma. may break dockerfile builds.
+
 	return container, nil
 }
 
