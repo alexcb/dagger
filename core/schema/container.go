@@ -691,6 +691,13 @@ func (s *containerSchema) Install() {
 				absolutely necessary and only with trusted commands.`),
 			),
 
+		dagql.NodeFunc("withSymlink", s.withSymlink).
+			Doc(`Return a snapshot with a symlink.`).
+			Args(
+				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
+				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
+			),
+
 		dagql.Func("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures the provided list of devices to be accessible to this container.`,
@@ -2323,4 +2330,13 @@ func (s *containerSchema) terminalLegacy(
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {
 	return "", nil
+}
+
+type containerWithSymlinkArgs struct {
+	Target   string
+	LinkName string
+}
+
+func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithSymlinkArgs) (dagql.Instance[*core.Container], error) {
+	panic("dont use containerSchema version (for now)")
 }
