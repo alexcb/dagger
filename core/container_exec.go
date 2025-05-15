@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,8 +14,15 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
+	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/identity"
+	"github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/solver/llbsolver/errdefs"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/util/progress/logs"
+	"github.com/moby/buildkit/worker"
 	"github.com/pkg/errors"
 )
 
@@ -346,6 +354,22 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	// set image ref to empty string
 	container.ImageRef = ""
 
+	// edge, err := llbsolver.Load(ctx, container.FS, nil)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// vtx := edge.Vertex
+	//
+	// dag, err := buildkit.DefToDAG(container.FS)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// exec, ok := dag.AsExec()
+	// if !ok {
+	// 	return nil, fmt.Errorf("expected exec")
+	// }
+	// execop := ops.NewExecOp(vtx, exec.ExecOp, exec.Platform, container.Query.BuildkitCache(), nil, sessionmanager, exec, worker)
+
 	// TODO:
 	// - immediately unmarshal llb, and run, see ExecOp.Exec
 	// - copy paste code through, remove llb piece-by-piece (e.g. so instead of
@@ -353,6 +377,158 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	//   directly)
 	// - keep going until no more llb read/writes, and remove LLB conversion
 	// - keep worker abstraction... for now. need to discuss with sipsma. may break dockerfile builds.
+
+	// --------------------------------------------------------------------------------
+
+	op, ok := DagOpFromContext[ContainerDagOp](ctx)
+	if !ok {
+		return nil, fmt.Errorf("no dagop")
+	}
+
+	refs := op.GetMounts()
+	workerRefs := make([]worker.WorkerRef, 0, len(refs))
+	for _, ref := range refs {
+		// XXX: PrepareMounts needs this (but only uses ImmutableRef)
+		workerRefs = append(workerRefs, worker.WorkerRef{ImmutableRef: ref})
+	}
+
+	platformOS := runtime.GOOS
+	// if e.platform != nil {
+	// 	platformOS = e.platform.OS
+	// }
+	p, err := container.PrepareMounts(ctx, e.mm, e.cm, g, e.op.Meta.Cwd, e.op.Mounts, refs, func(m *pb.Mount, ref cache.ImmutableRef) (cache.MutableRef, error) {
+		desc := fmt.Sprintf("mount %s from exec %s", m.Dest, strings.Join(e.op.Meta.Args, " "))
+		return e.cm.New(ctx, ref, g, cache.WithDescription(desc))
+	}, platformOS)
+	defer func() {
+		if err != nil {
+			execInputs := make([]solver.Result, len(e.op.Mounts))
+			for i, m := range e.op.Mounts {
+				if m.Input == -1 {
+					continue
+				}
+				execInputs[i] = inputs[m.Input].Clone()
+			}
+			execMounts := make([]solver.Result, len(e.op.Mounts))
+			copy(execMounts, execInputs)
+			for i, res := range results {
+				execMounts[p.OutputRefs[i].MountIndex] = res
+			}
+			for _, active := range p.Actives {
+				if active.NoCommit {
+					active.Ref.Release(context.TODO())
+				} else {
+					ref, cerr := active.Ref.Commit(ctx)
+					if cerr != nil {
+						err = errors.Wrapf(err, "error committing %s: %s", active.Ref.ID(), cerr)
+						continue
+					}
+					execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, e.w)
+				}
+			}
+			err = errdefs.WithExecError(err, execInputs, execMounts)
+		} else {
+			// Only release actives if err is nil.
+			for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
+				p.Actives[i].Ref.Release(context.TODO())
+			}
+		}
+		for _, o := range p.OutputRefs {
+			if o.Ref != nil {
+				o.Ref.Release(context.TODO())
+			}
+		}
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	extraHosts, err := container.ParseExtraHosts(e.op.Meta.ExtraHosts)
+	if err != nil {
+		return nil, err
+	}
+
+	emu, err := getEmulator(ctx, e.platform)
+	if err != nil {
+		return nil, err
+	}
+	if emu != nil {
+		e.op.Meta.Args = append([]string{qemuMountName}, e.op.Meta.Args...)
+
+		p.Mounts = append(p.Mounts, executor.Mount{
+			Readonly: true,
+			Src:      emu,
+			Dest:     qemuMountName,
+		})
+	}
+
+	meta := executor.Meta{
+		Args:                      e.op.Meta.Args,
+		Env:                       e.op.Meta.Env,
+		Cwd:                       e.op.Meta.Cwd,
+		User:                      e.op.Meta.User,
+		Hostname:                  e.op.Meta.Hostname,
+		ReadonlyRootFS:            p.ReadonlyRootFS,
+		ExtraHosts:                extraHosts,
+		Ulimit:                    e.op.Meta.Ulimit,
+		CgroupParent:              e.op.Meta.CgroupParent,
+		NetMode:                   e.op.Network,
+		SecurityMode:              e.op.Security,
+		RemoveMountStubsRecursive: e.op.Meta.RemoveMountStubsRecursive,
+	}
+
+	if e.op.Meta.ProxyEnv != nil {
+		meta.Env = append(meta.Env, proxyEnvList(e.op.Meta.ProxyEnv)...)
+	}
+	var currentOS string
+	if e.platform != nil {
+		currentOS = e.platform.OS
+	}
+	meta.Env = addDefaultEnvvar(meta.Env, "PATH", utilsystem.DefaultPathEnv(currentOS))
+
+	secretEnv, err := e.loadSecretEnv(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	meta.Env = append(meta.Env, secretEnv...)
+
+	if e.op.Meta.ValidExitCodes != nil {
+		meta.ValidExitCodes = make([]int, len(e.op.Meta.ValidExitCodes))
+		for i, code := range e.op.Meta.ValidExitCodes {
+			meta.ValidExitCodes[i] = int(code)
+		}
+	}
+
+	stdout, stderr, flush := logs.NewLogStreams(ctx, os.Getenv("BUILDKIT_DEBUG_EXEC_OUTPUT") == "1")
+	defer stdout.Close()
+	defer stderr.Close()
+	defer func() {
+		if err != nil {
+			flush()
+		}
+	}()
+
+	rec, execErr := e.exec.Run(ctx, "", p.Root, p.Mounts, executor.ProcessInfo{
+		Meta:   meta,
+		Stdin:  nil,
+		Stdout: stdout,
+		Stderr: stderr,
+	}, nil)
+
+	for i, out := range p.OutputRefs {
+		if mutable, ok := out.Ref.(cache.MutableRef); ok {
+			ref, err := mutable.Commit(ctx)
+			if err != nil {
+				return nil, errors.Wrapf(err, "error committing %s", mutable.ID())
+			}
+			results = append(results, worker.NewWorkerRefResult(ref, e.w))
+		} else {
+			results = append(results, worker.NewWorkerRefResult(out.Ref.(cache.ImmutableRef), e.w))
+		}
+		// Prevent the result from being released.
+		p.OutputRefs[i].Ref = nil
+	}
+	e.rec = rec
 
 	return container, nil
 }

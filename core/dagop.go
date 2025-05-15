@@ -457,6 +457,14 @@ type ContainerDagOp struct {
 	inputs []solver.Result
 }
 
+func (op ContainerDagOp) GetMounts() []bkcache.ImmutableRef {
+	refs := make([]bkcache.ImmutableRef, 0, len(op.inputs))
+	for _, input := range op.inputs {
+		refs = append(refs, input.Sys().(*worker.WorkerRef).ImmutableRef)
+	}
+	return refs
+}
+
 func (op ContainerDagOp) GetRootMount() bkcache.ImmutableRef {
 	input := op.inputs[0]
 	return input.Sys().(*worker.WorkerRef).ImmutableRef
@@ -522,9 +530,9 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 	switch inst := obj.(type) {
 	case dagql.Instance[*Container]:
 		refs := make([]solver.Result, 0, 1+len(inst.Self.Mounts))
-		if inst.Self.Result != nil {
+		if inst.Self.FSResult != nil {
 			fmt.Println("getting result")
-			ref := worker.NewWorkerRefResult(inst.Self.Result.Clone(), opt.Worker)
+			ref := worker.NewWorkerRefResult(inst.Self.FSResult.Clone(), opt.Worker)
 			refs = append(refs, ref)
 		} else {
 			res, err := inst.Self.Evaluate(ctx)

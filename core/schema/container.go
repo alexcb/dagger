@@ -422,7 +422,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.Func("withExec", s.withExec).
+		dagql.NodeFunc("withExec", DagOpContainerWrapper(s.srv, s.withExec)).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -865,7 +865,7 @@ type containerExecArgs struct {
 	SkipEntrypoint *bool `default:"false"`
 }
 
-func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs) (inst dagql.Instance[*core.Container], _ error) {
 	if args.SkipEntrypoint != nil {
 		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
 		args.UseEntrypoint = !*args.SkipEntrypoint
@@ -873,16 +873,20 @@ func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, 
 
 	expandedArgs := make([]string, len(args.Args))
 	for i, arg := range args.Args {
-		expandedArg, err := expandEnvVar(ctx, parent, arg, args.Expand)
+		expandedArg, err := expandEnvVar(ctx, parent.Self, arg, args.Expand)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 
 		expandedArgs[i] = expandedArg
 	}
 	args.Args = expandedArgs
 
-	return parent.WithExec(ctx, args.ContainerExecOpts)
+	ctr, err := parent.Self.WithExec(ctx, args.ContainerExecOpts)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 }
 
 func (s *containerSchema) magic(ctx context.Context, parent dagql.Instance[*core.Container], _ struct{}) (inst dagql.Instance[*core.Container], _ error) {
@@ -920,7 +924,7 @@ func (s *containerSchema) magic(ctx context.Context, parent dagql.Instance[*core
 	if err != nil {
 		return inst, err
 	}
-	ctr.Result = snap
+	ctr.FSResult = snap
 
 	for i, mount := range ctr.Mounts {
 		newRef, err := cache.New(ctx, op.GetMount(mount.Target), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),

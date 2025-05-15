@@ -59,8 +59,8 @@ type Container struct {
 	Query *Query
 
 	// The container's root filesystem.
-	FS     *pb.Definition
-	Result bkcache.ImmutableRef // only valid when returned by dagop
+	FS       *pb.Definition
+	FSResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig
@@ -73,6 +73,8 @@ type Container struct {
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *pb.Definition
+	// XXX: compute this :thinking:
+	MetaResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// The platform of the container's rootfs.
 	Platform Platform
@@ -175,8 +177,8 @@ func (container *Container) Clone() *Container {
 var _ dagql.OnReleaser = (*Container)(nil)
 
 func (ctr *Container) OnRelease(ctx context.Context) error {
-	if ctr.Result != nil {
-		err := ctr.Result.Release(ctx)
+	if ctr.FSResult != nil {
+		err := ctr.FSResult.Release(ctx)
 		if err != nil {
 			return err
 		}
