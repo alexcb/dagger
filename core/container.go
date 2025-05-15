@@ -1687,6 +1687,7 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		}
 	}
 
+	// XXX: nope
 	container, err := container.WithExec(ctx, ContainerExecOpts{
 		Args:                          cmdargs,
 		UseEntrypoint:                 useEntrypoint,

@@ -173,6 +173,9 @@ func (w *Worker) Run(
 		return nil, err
 	}
 
+	dt, _ := json.Marshal(w.execMD)
+	fmt.Println("execMD in custom worker!", string(dt))
+
 	state := newExecState(id, &procInfo, rootMount, mounts, started)
 	return nil, w.run(ctx, state,
 		w.setupNetwork,

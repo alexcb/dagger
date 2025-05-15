@@ -422,7 +422,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFunc("withExec", DagOpContainerWrapper(s.srv, s.withExec)).
+		dagql.NodeFunc("withExec", s.withExec).
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
 			Args(
@@ -865,7 +865,40 @@ type containerExecArgs struct {
 	SkipEntrypoint *bool `default:"false"`
 }
 
+func metaMount(ctx context.Context, stdin string) (llb.State, string) {
+	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
+	if stdin != "" {
+		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
+	}
+
+	return llb.Scratch().File(
+			meta,
+			buildkit.WithTracePropagation(ctx),
+			buildkit.WithPassthrough(),
+		),
+		buildkit.MetaMountDestPath
+}
+
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*core.Container], args containerExecArgs) (inst dagql.Instance[*core.Container], _ error) {
+	if _, ok := core.DagOpFromContext[core.ContainerDagOp](ctx); !ok {
+		parent.Self = parent.Self.Clone()
+
+		st, _ := metaMount(ctx, args.Stdin)
+		def, err := st.Marshal(ctx, llb.Platform(parent.Self.Platform.Spec()))
+		if err != nil {
+			return inst, err
+		}
+		parent.Self.Meta = def.ToPB()
+
+		inst, err := DagOpContainer(ctx, s.srv, parent, args, nil, s.withExec)
+		if err != nil {
+			return inst, err
+		}
+
+		inst.Self.ImageRef = ""
+		return inst, nil
+	}
+
 	if args.SkipEntrypoint != nil {
 		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
 		args.UseEntrypoint = !*args.SkipEntrypoint
@@ -899,7 +932,7 @@ func (s *containerSchema) magic(ctx context.Context, parent dagql.Instance[*core
 
 	ctr := parent.Self.Clone()
 
-	newRef, err := cache.New(ctx, op.GetRootMount(), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+	newRef, err := cache.New(ctx, op.GetInput(op.Root()), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("symlink %s", "todo")))
 	if err != nil {
 		return inst, err
@@ -927,7 +960,7 @@ func (s *containerSchema) magic(ctx context.Context, parent dagql.Instance[*core
 	ctr.FSResult = snap
 
 	for i, mount := range ctr.Mounts {
-		newRef, err := cache.New(ctx, op.GetMount(mount.Target), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		newRef, err := cache.New(ctx, op.GetInput(op.Other()[i]), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 			bkcache.WithDescription(fmt.Sprintf("symlink %s", "todo")))
 		if err != nil {
 			return inst, err

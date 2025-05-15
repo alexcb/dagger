@@ -77,7 +77,7 @@ func absPath(workDir string, containerPath string) string {
 }
 
 func defToState(def *pb.Definition) (llb.State, error) {
-	if def.Def == nil {
+	if def == nil || def.Def == nil {
 		// NB(vito): llb.Scratch().Marshal().ToPB() produces an empty
 		// *pb.Definition. If we don't convert it properly back to a llb.Scratch()
 		// we'll hit 'cannot marshal empty definition op' when trying to marshal it

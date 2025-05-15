@@ -39,6 +39,7 @@ import (
 	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
 	bkclient "github.com/moby/buildkit/client"
 	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
+	bkexecutor "github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
 	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
@@ -589,6 +590,14 @@ func (srv *Server) Close() error {
 
 func (srv *Server) BuildkitCache() bkcache.Manager {
 	return srv.workerCache
+}
+
+func (srv *Server) BuildkitSession() *bksession.Manager {
+	return srv.bkSessionManager
+}
+
+func (srv *Server) BuildkitExecutor() bkexecutor.Executor {
+	return srv.worker.Executor()
 }
 
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
