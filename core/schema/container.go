@@ -21,7 +21,6 @@ import (
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
-	"github.com/moby/buildkit/identity"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -923,74 +922,78 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.Instance[*c
 }
 
 func (s *containerSchema) magic(ctx context.Context, parent dagql.Instance[*core.Container], _ struct{}) (inst dagql.Instance[*core.Container], _ error) {
-	op, ok := core.DagOpFromContext[core.ContainerDagOp](ctx)
-	if !ok {
-		return inst, fmt.Errorf("no dagop")
-	}
-
-	cache := parent.Self.Query.BuildkitCache()
-
-	ctr := parent.Self.Clone()
-
-	newRef, err := cache.New(ctx, op.GetInput(op.Root()), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("symlink %s", "todo")))
-	if err != nil {
-		return inst, err
-	}
-	err = core.MountRef(ctx, newRef, op.Group(), func(root string) error {
-		f, err := os.Create(filepath.Join(root, "hello-there"))
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(f, "/")
-		fmt.Fprintln(f, identity.NewID())
-		err = f.Close()
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return inst, err
-	}
-	snap, err := newRef.Commit(ctx)
-	if err != nil {
-		return inst, err
-	}
-	ctr.FSResult = snap
-
-	for i, mount := range ctr.Mounts {
-		newRef, err := cache.New(ctx, op.GetInput(op.Other()[i]), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-			bkcache.WithDescription(fmt.Sprintf("symlink %s", "todo")))
-		if err != nil {
-			return inst, err
-		}
-		err = core.MountRef(ctx, newRef, op.Group(), func(root string) error {
-			f, err := os.Create(filepath.Join(root, "hello-there"))
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(f, mount.Target)
-			fmt.Fprintln(f, identity.NewID())
-			err = f.Close()
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return inst, err
-		}
-		snap, err := newRef.Commit(ctx)
-		if err != nil {
-			return inst, err
-		}
-		mount.Result = snap
-		ctr.Mounts[i] = mount
-	}
-
-	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
+	return inst, fmt.Errorf("unimplemented")
 }
+
+// func (s *containerSchema) magic(ctx context.Context, parent dagql.Instance[*core.Container], _ struct{}) (inst dagql.Instance[*core.Container], _ error) {
+// 	op, ok := core.DagOpFromContext[core.ContainerDagOp](ctx)
+// 	if !ok {
+// 		return inst, fmt.Errorf("no dagop")
+// 	}
+//
+// 	cache := parent.Self.Query.BuildkitCache()
+//
+// 	ctr := parent.Self.Clone()
+//
+// 	newRef, err := cache.New(ctx, op.GetInput(op.Root()), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+// 		bkcache.WithDescription(fmt.Sprintf("symlink %s", "todo")))
+// 	if err != nil {
+// 		return inst, err
+// 	}
+// 	err = core.MountRef(ctx, newRef, op.Group(), func(root string) error {
+// 		f, err := os.Create(filepath.Join(root, "hello-there"))
+// 		if err != nil {
+// 			return err
+// 		}
+// 		fmt.Fprintln(f, "/")
+// 		fmt.Fprintln(f, identity.NewID())
+// 		err = f.Close()
+// 		if err != nil {
+// 			return err
+// 		}
+// 		return nil
+// 	})
+// 	if err != nil {
+// 		return inst, err
+// 	}
+// 	snap, err := newRef.Commit(ctx)
+// 	if err != nil {
+// 		return inst, err
+// 	}
+// 	ctr.FSResult = snap
+//
+// 	for i, mount := range ctr.Mounts {
+// 		newRef, err := cache.New(ctx, op.GetInput(op.Other()[i]), op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+// 			bkcache.WithDescription(fmt.Sprintf("symlink %s", "todo")))
+// 		if err != nil {
+// 			return inst, err
+// 		}
+// 		err = core.MountRef(ctx, newRef, op.Group(), func(root string) error {
+// 			f, err := os.Create(filepath.Join(root, "hello-there"))
+// 			if err != nil {
+// 				return err
+// 			}
+// 			fmt.Fprintln(f, mount.Target)
+// 			fmt.Fprintln(f, identity.NewID())
+// 			err = f.Close()
+// 			if err != nil {
+// 				return err
+// 			}
+// 			return nil
+// 		})
+// 		if err != nil {
+// 			return inst, err
+// 		}
+// 		snap, err := newRef.Commit(ctx)
+// 		if err != nil {
+// 			return inst, err
+// 		}
+// 		mount.Result = snap
+// 		ctr.Mounts[i] = mount
+// 	}
+//
+// 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
+// }
 
 func (s *containerSchema) stdout(useEntrypoint bool) dagql.FuncHandler[*core.Container, struct{}, string] {
 	if useEntrypoint {

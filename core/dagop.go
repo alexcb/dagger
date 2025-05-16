@@ -14,7 +14,6 @@ import (
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
@@ -371,50 +370,14 @@ func NewContainerDagOp(
 	id *call.ID,
 	ctr *Container,
 ) (*Container, error) {
+	mounts, inputs, err := ctr.getAllMounts()
+	if err != nil {
+		return nil, err
+	}
+
 	dagop := &ContainerDagOp{
-		ID: id,
-	}
-	inputs := make([]llb.State, 0, len(ctr.Mounts))
-
-	addMount := func(mnt ContainerMount) error {
-		st, err := defToState(mnt.Source)
-		if err != nil {
-			return err
-		}
-		inputs = append(inputs, st)
-
-		mount := &pb.Mount{
-			Dest:     mnt.Target,
-			Selector: mnt.SourcePath,
-			Output:   pb.OutputIndex(len(dagop.Mounts)),
-			Readonly: mnt.Readonly,
-			// MountType: nil,
-			// TmpfsOpt: nil,
-			// CacheOpt: nil,
-			// SecretOpt: nil,
-			// SSHOpt: nil,
-			// ContentCache: nil,
-		}
-		if st.Output() == nil {
-			mount.Input = pb.Empty
-		} else {
-			mount.Input = pb.InputIndex(len(dagop.Mounts))
-		}
-		dagop.Mounts = append(dagop.Mounts, mount)
-
-		return nil
-	}
-
-	if err := addMount(ContainerMount{Source: ctr.FS, Target: "/"}); err != nil {
-		return nil, err
-	}
-	if err := addMount(ContainerMount{Source: ctr.Meta, Target: buildkit.MetaMountDestPath, SourcePath: buildkit.MetaMountDestPath}); err != nil {
-		return nil, err
-	}
-	for _, mount := range ctr.Mounts {
-		if err := addMount(mount); err != nil {
-			return nil, err
-		}
+		ID:     id,
+		Mounts: mounts,
 	}
 
 	st, err := newContainerDagOp(ctx, dagop, inputs)
@@ -422,29 +385,15 @@ func NewContainerDagOp(
 		return nil, err
 	}
 
+	sts := make([]llb.State, 0, len(mounts))
+	for _, mount := range mounts {
+		sts = append(sts, buildkit.StateIdx(st, int(mount.Output)))
+	}
+
 	ctr = ctr.Clone()
-
-	def, err := st.Marshal(ctx, llb.Platform(ctr.Platform.Spec()))
+	err = ctr.setAllMountStates(ctx, mounts, sts)
 	if err != nil {
 		return nil, err
-	}
-	ctr.FS = def.ToPB()
-
-	st = buildkit.StateIdx(st, 1)
-	def, err = st.Marshal(ctx, llb.Platform(ctr.Platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-	ctr.Meta = def.ToPB()
-
-	for i, mount := range ctr.Mounts {
-		st := buildkit.StateIdx(st, i+2)
-		def, err := st.Marshal(ctx, llb.Platform(ctr.Platform.Spec()))
-		if err != nil {
-			return nil, err
-		}
-		mount.Source = def.ToPB()
-		ctr.Mounts[i] = mount
 	}
 
 	return ctr, nil
@@ -457,9 +406,6 @@ func newContainerDagOp(
 ) (llb.State, error) {
 	if dagop.ID == nil {
 		return llb.State{}, fmt.Errorf("dagop ID is nil")
-	}
-	if len(inputs) != len(dagop.Mounts) {
-		return llb.State{}, fmt.Errorf("mount count did not match %d != %d", len(inputs), len(dagop.Mounts))
 	}
 
 	var t Container
@@ -474,8 +420,6 @@ func newContainerDagOp(
 type ContainerDagOp struct {
 	ID *call.ID
 
-	// XXX: this currently only includes destinations
-	// the other info is also relevant :eyes:
 	Mounts []*pb.Mount
 
 	// Data is any additional data that should be passed to the dagop. It does
@@ -497,25 +441,25 @@ func (op ContainerDagOp) GetMounts() []bkcache.ImmutableRef {
 	return refs
 }
 
-func (op ContainerDagOp) Root() *pb.Mount {
-	return op.Mounts[0]
-}
-
-func (op ContainerDagOp) Meta() *pb.Mount {
-	return op.Mounts[1]
-}
-
-func (op ContainerDagOp) Other() []*pb.Mount {
-	return op.Mounts[2:]
-}
-
-func (op ContainerDagOp) GetInput(mount *pb.Mount) bkcache.ImmutableRef {
-	if mount.Input == pb.Empty {
-		return nil
-	}
-	input := op.inputs[mount.Input]
-	return input.Sys().(*worker.WorkerRef).ImmutableRef
-}
+// func (op ContainerDagOp) Root() *pb.Mount {
+// 	return op.Mounts[0]
+// }
+//
+// func (op ContainerDagOp) Meta() *pb.Mount {
+// 	return op.Mounts[1]
+// }
+//
+// func (op ContainerDagOp) Other() []*pb.Mount {
+// 	return op.Mounts[2:]
+// }
+//
+// func (op ContainerDagOp) GetInput(mount *pb.Mount) bkcache.ImmutableRef {
+// 	if mount.Input == pb.Empty {
+// 		return nil
+// 	}
+// 	input := op.inputs[mount.Input]
+// 	return input.Sys().(*worker.WorkerRef).ImmutableRef
+// }
 
 func (op ContainerDagOp) Name() string {
 	return "dagop.ctr"
@@ -551,10 +495,6 @@ func (op ContainerDagOp) CacheKey(ctx context.Context) (key digest.Digest, err e
 }
 
 func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
-	// if len(inputs) != len(op.Mounts) {
-	// 	return nil, fmt.Errorf("input count did not match %d != %d", len(inputs), len(op.Mounts))
-	// }
-
 	op.g = g
 	op.opt = opt
 	op.inputs = inputs
@@ -567,70 +507,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 
 	switch inst := obj.(type) {
 	case dagql.Instance[*Container]:
-		// TODO: properly handle outputs
-		refs := make([]solver.Result, 0, 2+len(inst.Self.Mounts))
-		if inst.Self.FSResult != nil {
-			ref := worker.NewWorkerRefResult(inst.Self.FSResult.Clone(), opt.Worker)
-			refs = append(refs, ref)
-		} else {
-			res, err := inst.Self.Evaluate(ctx)
-			if err != nil {
-				return nil, err
-			}
-			ref, err := res.Ref.Result(ctx)
-			if err != nil {
-				return nil, err
-			}
-			refs = append(refs, ref)
-		}
-
-		bk, err := inst.Self.Query.Buildkit(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-		}
-
-		if inst.Self.MetaResult != nil {
-			ref := worker.NewWorkerRefResult(inst.Self.MetaResult.Clone(), opt.Worker)
-			refs = append(refs, ref)
-		} else {
-			res, err := bk.Solve(ctx, bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: inst.Self.Meta,
-			})
-			if err != nil {
-				return nil, err
-			}
-			ref, err := res.Ref.Result(ctx)
-			if err != nil {
-				return nil, err
-			}
-			refs = append(refs, ref)
-		}
-
-		// XXX: a lot of this can go into core/container.go
-		for _, mount := range inst.Self.Mounts {
-			if mount.Result != nil {
-				ref := worker.NewWorkerRefResult(mount.Result.Clone(), opt.Worker)
-				refs = append(refs, ref)
-			} else {
-				res, err := bk.Solve(ctx, bkgw.SolveRequest{
-					Evaluate:   true,
-					Definition: mount.Source,
-				})
-				if err != nil {
-					return nil, err
-				}
-				ref, err := res.Ref.Result(ctx)
-				if err != nil {
-					return nil, err
-				}
-				refs = append(refs, ref)
-			}
-		}
-
-		fmt.Println("refs", refs)
-		return refs, nil
-
+		return inst.Self.getAllMountRefs(ctx, opt.Worker, op.Mounts)
 	default:
 		// shouldn't happen, should have errored in DagLLB already
 		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,8 +14,10 @@ import (
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
+	bksolver "github.com/moby/buildkit/solver"
 	bkmounts "github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/progress/logs"
@@ -65,6 +68,114 @@ type ContainerExecOpts struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+}
+
+func (container *Container) getAllMounts() (mounts []*pb.Mount, inputs []llb.State, _ error) {
+	addMount := func(mnt ContainerMount) error {
+		st, err := defToState(mnt.Source)
+		if err != nil {
+			return err
+		}
+		inputs = append(inputs, st)
+
+		mount := &pb.Mount{
+			Dest:     mnt.Target,
+			Selector: mnt.SourcePath,
+			Output:   pb.OutputIndex(len(mounts)),
+			Readonly: mnt.Readonly,
+			// MountType: nil,
+			// TmpfsOpt: nil,
+			// CacheOpt: nil,
+			// SecretOpt: nil,
+			// SSHOpt: nil,
+			// ContentCache: nil,
+		}
+		if st.Output() == nil {
+			mount.Input = pb.Empty
+		} else {
+			mount.Input = pb.InputIndex(len(mounts))
+		}
+		mounts = append(mounts, mount)
+
+		return nil
+	}
+
+	if err := addMount(ContainerMount{Source: container.FS, Target: "/"}); err != nil {
+		return nil, nil, err
+	}
+	if err := addMount(ContainerMount{Source: container.Meta, Target: buildkit.MetaMountDestPath, SourcePath: buildkit.MetaMountDestPath}); err != nil {
+		return nil, nil, err
+	}
+	for _, mount := range container.Mounts {
+		if err := addMount(mount); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return mounts, inputs, nil
+}
+
+func (container *Container) setAllMountStates(ctx context.Context, mounts []*pb.Mount, states []llb.State) error {
+	for i, mount := range mounts {
+		st := states[i]
+
+		def, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
+		if err != nil {
+			return err
+		}
+
+		switch mount.Output {
+		case 0:
+			container.FS = def.ToPB()
+		case 1:
+			container.Meta = def.ToPB()
+		default:
+			container.Mounts[i-2].Source = def.ToPB()
+		}
+	}
+
+	return nil
+}
+
+func (container *Container) getAllMountRefs(ctx context.Context, wkr worker.Worker, mounts []*pb.Mount) (outputs []bksolver.Result, _ error) {
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	addRef := func(def *pb.Definition, ref bkcache.ImmutableRef) error {
+		if ref != nil {
+			outputs = append(outputs, worker.NewWorkerRefResult(ref.Clone(), wkr))
+		} else {
+			res, err := bk.Solve(ctx, bkgw.SolveRequest{
+				// Evaluate:   true,
+				Definition: def,
+			})
+			if err != nil {
+				return err
+			}
+			ref, err := res.Ref.Result(ctx)
+			if err != nil {
+				return err
+			}
+			outputs = append(outputs, ref)
+		}
+		return nil
+	}
+
+	for i, mount := range mounts {
+		switch mount.Output {
+		case 0:
+			addRef(container.FS, container.FSResult)
+		case 1:
+			addRef(container.Meta, container.MetaResult)
+		default:
+			mnt := container.Mounts[i-2]
+			addRef(mnt.Source, mnt.Result)
+		}
+	}
+
+	return outputs, nil
 }
 
 func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
@@ -310,7 +421,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	//
 	// execMDOpt, err := execMD.AsConstraintsOpt()
 	// if err != nil {
-	// 	return nil, fmt.Errorf("execution metadata: %w", err)
+	// 	returnnil, fmt.Errorf("execution metadata: %w", err)
 	// }
 	// runOpts = append(runOpts, execMDOpt)
 	// execSt := fsSt.Run(runOpts...)
@@ -487,7 +598,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	meta := executor.Meta{
 		Args: args,
 		Env:  cfg.Env, // XXX: + more
-		Cwd:  cfg.WorkingDir,
+		Cwd:  cmp.Or(cfg.WorkingDir, "/"),
 		User: cfg.User,
 		// Hostname:       e.op.Meta.Hostname, // empty seems right?
 		ReadonlyRootFS: p.ReadonlyRootFS,
