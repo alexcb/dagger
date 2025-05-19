@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -691,7 +692,7 @@ func (s *containerSchema) Install() {
 				absolutely necessary and only with trusted commands.`),
 			),
 
-		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, nil)).
+		dagql.NodeFunc("withSymlink", DagOpContainerWrapper(s.srv, s.withSymlink)).
 			Doc(`Return a snapshot with a symlink.`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
@@ -2338,9 +2339,17 @@ type containerWithSymlinkArgs struct {
 }
 
 func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Container], args directoryWithSymlinkArgs) (inst dagql.Instance[*core.Container], _ error) {
+	fmt.Printf("ACB container withSymlink from %s\n", debug.Stack())
+	if _, ok := core.DagOpFromContext[core.FSDagOp](ctx); !ok {
+		fmt.Printf("ACB whoops no dagop\n")
+	} else {
+		fmt.Printf("ACB dagop found here\n")
+	}
+
 	container, err := parent.Self.WithSymlink(ctx, s.srv, args.Target, args.LinkName)
 	if err != nil {
 		return inst, err
 	}
+	fmt.Printf("ACB container withSymlink part 2\n")
 	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, container)
 }

@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -159,8 +160,10 @@ func DagOpContainerWrapper[A any](
 ) dagql.NodeFuncHandler[*core.Container, A, dagql.Instance[*core.Container]] {
 	return func(ctx context.Context, self dagql.Instance[*core.Container], args A) (inst dagql.Instance[*core.Container], err error) {
 		if core.DagOpInContext[core.ContainerDagOp](ctx) {
+			fmt.Printf("ACB DagOpInContext is true in the wrapper, gonna call %v\n", fn)
 			return fn(ctx, self, args)
 		}
+		fmt.Printf("ACB DagOpInContext aint true in the wrapper\n")
 		return DagOpContainer(ctx, srv, self, args, nil, fn)
 	}
 }

@@ -697,6 +697,12 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Container, error) {
 	container = container.Clone()
 
+	_, ok := DagOpFromContext[ContainerDagOp](ctx)
+	if !ok {
+		return nil, fmt.Errorf("no dagop")
+	}
+
+	fmt.Printf("ACB container upper WithSymlink\n")
 	dir, _ := filepath.Split(filepath.Clean(linkName))
 	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
 		// TODO?
@@ -705,6 +711,14 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 		//	return nil, err
 		//}
 
+		// NOTE: core.Directory expects a FSDagOp; however the container instead has a ContainerDagOp, how will we convert this? or is there a way to create a new one here?
+		if _, ok := DagOpFromContext[FSDagOp](ctx); !ok {
+			fmt.Printf("ACB inside whoops no dagop\n")
+		} else {
+			fmt.Printf("ACB inside dagop found here\n")
+		}
+
+		fmt.Printf("ACB container upper WithSymlink inside\n")
 		return dir.WithSymlink(ctx, srv, target, linkName)
 	})
 }
