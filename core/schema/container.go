@@ -691,7 +691,7 @@ func (s *containerSchema) Install() {
 				absolutely necessary and only with trusted commands.`),
 			),
 
-		dagql.NodeFunc("withSymlink", s.withSymlink).
+		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, nil)).
 			Doc(`Return a snapshot with a symlink.`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
@@ -2337,6 +2337,10 @@ type containerWithSymlinkArgs struct {
 	LinkName string
 }
 
-func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Container], args containerWithSymlinkArgs) (dagql.Instance[*core.Container], error) {
-	panic("dont use containerSchema version (for now)")
+func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Container], args directoryWithSymlinkArgs) (inst dagql.Instance[*core.Container], _ error) {
+	container, err := parent.Self.WithSymlink(ctx, s.srv, args.Target, args.LinkName)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, container)
 }

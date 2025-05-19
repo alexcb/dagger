@@ -694,6 +694,21 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 	return container.withMounted(ctx, target, file.LLB, file.File, file.Services, owner, readonly)
 }
 
+func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Container, error) {
+	container = container.Clone()
+
+	dir, _ := filepath.Split(filepath.Clean(linkName))
+	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
+		// TODO?
+		//ownership, err := container.ownership(ctx, owner)
+		//if err != nil {
+		//	return nil, err
+		//}
+
+		return dir.WithSymlink(ctx, srv, target, linkName)
+	})
+}
+
 var SeenCacheKeys = new(sync.Map)
 
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache *CacheVolume, source *Directory, sharingMode CacheSharingMode, owner string) (*Container, error) {
