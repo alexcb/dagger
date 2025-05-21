@@ -20,6 +20,7 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -687,6 +688,70 @@ func (container *Container) WithNewFile(ctx context.Context, dest string, conten
 	})
 }
 
+func locateMount(container *Container, containerPath string) (int, bool) {
+	// iterate in reverse order so we'll find deeper mounts first
+	for i := len(container.Mounts) - 1; i >= 0; i-- {
+		mnt := container.Mounts[i]
+
+		if containerPath == mnt.Target || strings.HasPrefix(containerPath, mnt.Target+"/") {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Container, error) {
+	container = container.Clone()
+
+	op, ok := DagOpFromContext[ContainerDagOp](ctx)
+	if !ok {
+		return nil, fmt.Errorf("no dagop")
+	}
+
+	containerPath := path.Clean(path.Join(container.Config.WorkingDir, linkName))
+	linkNamePath, _ := filepath.Split(containerPath)
+
+	dir, mount, err := locatePath(container, linkNamePath, NewDirectory)
+	if err != nil {
+		return nil, err
+	}
+	if mount != nil {
+		// symlink will be added to a mounted directory
+		newDir, err := dir.WithSymlink(ctx, srv, target, strings.TrimPrefix(containerPath, mount.Target+"/"))
+		if err != nil {
+			return nil, err
+		}
+		mount.Result = newDir.Result
+		return container, nil
+	}
+
+	// otherwise symlink will be added to root fs
+
+	cache := container.Query.BuildkitCache()
+	newRef, err := cache.New(ctx, op.Inputs()[0], op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, op.Group(), func(root string) error {
+		fullLinkName := path.Clean(path.Join(root, container.Config.WorkingDir, linkName))
+		err := os.MkdirAll(filepath.Dir(fullLinkName), 0755)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(target, path.Join(root, container.Config.WorkingDir, linkName))
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	container.FSResult = snap
+	return container, nil
+}
+
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
@@ -970,7 +1035,7 @@ func locatePath[T *File | *Directory](
 
 	// NB(vito): iterate in reverse order so we'll find deeper mounts first
 	for i := len(container.Mounts) - 1; i >= 0; i-- {
-		mnt := container.Mounts[i]
+		mnt := &container.Mounts[i]
 
 		if containerPath == mnt.Target || strings.HasPrefix(containerPath, mnt.Target+"/") {
 			if mnt.Tmpfs {
@@ -996,7 +1061,7 @@ func locatePath[T *File | *Directory](
 				sub,
 				container.Platform,
 				container.Services,
-			), &mnt, nil
+			), mnt, nil
 		}
 	}
 

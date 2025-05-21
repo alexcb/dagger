@@ -432,6 +432,19 @@ func (op ContainerDagOp) GetMounts() []*pb.Mount {
 	return op.Mounts
 }
 
+func (op ContainerDagOp) GetMountAndInputForPath(containerPath string) (*pb.Mount, bkcache.ImmutableRef) {
+	// iterate in reverse order to find deeper mounts
+	for i := len(op.Mounts) - 1; i >= 0; i-- {
+		mnt := op.Mounts[i]
+
+		if containerPath == mnt.Dest || strings.HasPrefix(containerPath, mnt.Dest+"/") {
+			return mnt, op.inputs[mnt.Input].Sys().(*worker.WorkerRef).ImmutableRef
+		}
+	}
+	// return root if not found
+	return nil, op.inputs[0].Sys().(*worker.WorkerRef).ImmutableRef
+}
+
 func (op ContainerDagOp) Name() string {
 	return "dagop.ctr"
 }
