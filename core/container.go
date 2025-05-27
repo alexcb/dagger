@@ -20,7 +20,6 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -712,27 +711,8 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 		mount.Result = newDir.Result
 		return container, nil
 	}
-
 	// otherwise symlink will be added to root fs
-
-	cache := container.Query.BuildkitCache()
-	newRef, err := cache.New(ctx, op.Inputs()[0], op.Group(), bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
-	if err != nil {
-		return nil, err
-	}
-	err = MountRef(ctx, newRef, op.Group(), func(root string) error {
-		fullLinkName := path.Clean(path.Join(root, container.Config.WorkingDir, linkName))
-		err := os.MkdirAll(filepath.Dir(fullLinkName), 0755)
-		if err != nil {
-			return err
-		}
-		return os.Symlink(target, path.Join(root, container.Config.WorkingDir, linkName))
-	})
-	if err != nil {
-		return nil, err
-	}
-	snap, err := newRef.Commit(ctx)
+	snap, err := symlink(ctx, container.Query.BuildkitCache(), op.Inputs()[0], op.Group(), target, containerPath)
 	if err != nil {
 		return nil, err
 	}
