@@ -886,11 +886,14 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Return a snapshot with a symlink
      */
-    public function withSymlink(string $target, string $linkName): Container
+    public function withSymlink(string $target, string $linkName, ?bool $expand = false): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSymlink');
         $innerQueryBuilder->setArgument('target', $target);
         $innerQueryBuilder->setArgument('linkName', $linkName);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -4833,6 +4833,19 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.Contains(t, entries, "index.json")
 		require.Contains(t, entries, "manifest.json")
 	})
+
+	t.Run("env variable is expanded in WithSymlink", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("a", "alpha").
+			WithEnvVariable("b", "bravo").
+			WithNewFile("bravo.txt", "phonetic data").
+			WithSymlink("${b}.txt", "${a}.txt", dagger.ContainerWithSymlinkOpts{Expand: true}).
+			File("alpha.txt").Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "phonetic data", output)
+	})
 }
 
 func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {

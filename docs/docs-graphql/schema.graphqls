@@ -1037,6 +1037,12 @@ type Container {
     Location where the symbolic link will be created (e.g., "/new-file-link").
     """
     linkName: String!
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
   ): Container!
 
   """

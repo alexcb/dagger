@@ -569,12 +569,12 @@ func (s *directorySchema) asGit(
 	}, nil
 }
 
-type withSymlinkArgs struct {
+type directoryWithSymlinkArgs struct {
 	Target   string
 	LinkName string
 }
 
-func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Directory], args withSymlinkArgs) (inst dagql.Instance[*core.Directory], _ error) {
+func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.Instance[*core.Directory], _ error) {
 	dir, err := parent.Self.WithSymlink(ctx, s.srv, args.Target, args.LinkName)
 	if err != nil {
 		return inst, err

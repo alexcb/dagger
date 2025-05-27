@@ -2171,7 +2171,13 @@ class Container(Type):
         _ctx = self._select("withServiceBinding", _args)
         return Container(_ctx)
 
-    def with_symlink(self, target: str, link_name: str) -> Self:
+    def with_symlink(
+        self,
+        target: str,
+        link_name: str,
+        *,
+        expand: bool | None = False,
+    ) -> Self:
         """Return a snapshot with a symlink
 
         Parameters
@@ -2182,10 +2188,15 @@ class Container(Type):
         link_name:
             Location where the symbolic link will be created (e.g., "/new-
             file-link").
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo.txt").
         """
         _args = [
             Arg("target", target),
             Arg("linkName", link_name),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withSymlink", _args)
         return Container(_ctx)

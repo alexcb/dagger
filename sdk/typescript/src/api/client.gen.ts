@@ -565,6 +565,13 @@ export type ContainerWithNewFileOpts = {
   expand?: boolean
 }
 
+export type ContainerWithSymlinkOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithUnixSocketOpts = {
   /**
    * A user:group to set for the mounted socket.
@@ -2737,9 +2744,14 @@ export class Container extends BaseClient {
    * Return a snapshot with a symlink
    * @param target Location of the file or directory to link to (e.g., "/existing/file").
    * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
-  withSymlink = (target: string, linkName: string): Container => {
-    const ctx = this._ctx.select("withSymlink", { target, linkName })
+  withSymlink = (
+    target: string,
+    linkName: string,
+    opts?: ContainerWithSymlinkOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withSymlink", { target, linkName, ...opts })
     return new Container(ctx)
   }
 

@@ -2016,9 +2016,21 @@ func (r *Container) WithServiceBinding(alias string, service *Service) *Containe
 	}
 }
 
+// ContainerWithSymlinkOpts contains options for Container.WithSymlink
+type ContainerWithSymlinkOpts struct {
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	Expand bool
+}
+
 // Return a snapshot with a symlink
-func (r *Container) WithSymlink(target string, linkName string) *Container {
+func (r *Container) WithSymlink(target string, linkName string, opts ...ContainerWithSymlinkOpts) *Container {
 	q := r.query.Select("withSymlink")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
 	q = q.Arg("target", target)
 	q = q.Arg("linkName", linkName)
 

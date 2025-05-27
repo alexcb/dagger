@@ -1043,13 +1043,15 @@ defmodule Dagger.Container do
   @doc """
   Return a snapshot with a symlink
   """
-  @spec with_symlink(t(), String.t(), String.t()) :: Dagger.Container.t()
-  def with_symlink(%__MODULE__{} = container, target, link_name) do
+  @spec with_symlink(t(), String.t(), String.t(), [{:expand, boolean() | nil}]) ::
+          Dagger.Container.t()
+  def with_symlink(%__MODULE__{} = container, target, link_name, optional_args \\ []) do
     query_builder =
       container.query_builder
       |> QB.select("withSymlink")
       |> QB.put_arg("target", target)
       |> QB.put_arg("linkName", link_name)
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
       query_builder: query_builder,
