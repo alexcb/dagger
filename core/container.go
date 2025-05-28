@@ -304,11 +304,11 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 
 	for _, mnt := range mnts {
 		if mnt.Target == newMnt.Target || strings.HasPrefix(mnt.Target, parent) {
-			// FIXME it should be possible to simply append this at the end; however, there's a bug somewhere
-			// related to the indexing of mounts, so as a hack we need to keep the order consistent
-			// in order to allow container.writeToPath() to work
-			mntsCp = append(mntsCp, newMnt)
-			replaced = true
+			//commented out to reproduce bug // FIXME it should be possible to simply append this at the end; however, there's a bug somewhere
+			//commented out to reproduce bug // related to the indexing of mounts, so as a hack we need to keep the order consistent
+			//commented out to reproduce bug // in order to allow container.writeToPath() to work
+			//commented out to reproduce bug mntsCp = append(mntsCp, newMnt)
+			//commented out to reproduce bug replaced = true
 			continue
 		}
 

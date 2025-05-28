@@ -5081,7 +5081,8 @@ func (ContainerSuite) TestSymlink(ctx context.Context, t *testctx.T) {
 			WithMountedDirectory("/mnt-to-other-dir", d2).
 			WithSymlink("f", "/mnt/my-symlink")
 
-		_, err := ctr.WithExec([]string{"test", "-L", "/mnt/my-symlink"}).Stdout(ctx)
+		_, err := ctr.WithExec([]string{"sh", "-c", "set -x && ls -la /mnt && ls -la /mnt-to-other-dir && test -L /mnt/my-symlink"}).Stdout(ctx)
+		//_, err := ctr.WithExec([]string{"test", "-L", "/mnt/my-symlink"}).Stdout(ctx)
 		require.NoError(t, err)
 
 		// make sure the other mount wasn't changed
