@@ -597,17 +597,21 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Container, error) {
 	container = container.Clone()
 
-	dirSt, err := dir.StateWithSourcePath()
-	if err != nil {
-		return nil, err
-	}
+	if dir.Result != nil {
+		container.FSResult = dir.Result
+	} else {
+		dirSt, err := dir.StateWithSourcePath()
+		if err != nil {
+			return nil, err
+		}
 
-	def, err := dirSt.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
+		def, err := dirSt.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
+		if err != nil {
+			return nil, err
+		}
 
-	container.FS = def.ToPB()
+		container.FS = def.ToPB()
+	}
 
 	container.Services.Merge(dir.Services)
 
@@ -690,11 +694,6 @@ func (container *Container) WithNewFile(ctx context.Context, dest string, conten
 func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Container, error) {
 	container = container.Clone()
 
-	op, ok := DagOpFromContext[ContainerDagOp](ctx)
-	if !ok {
-		return nil, fmt.Errorf("no dagop")
-	}
-
 	containerPath := path.Clean(path.Join(container.Config.WorkingDir, linkName))
 	linkNameDirPath, _ := filepath.Split(containerPath)
 
@@ -711,13 +710,16 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 		mount.Result = newDir.Result
 		return container, nil
 	}
-	// otherwise symlink will be added to root fs
-	snap, err := symlink(ctx, container.Query.BuildkitCache(), op.Inputs()[0], op.Group(), target, containerPath)
+
+	dir, err = container.RootFS(ctx)
 	if err != nil {
 		return nil, err
 	}
-	container.FSResult = snap
-	return container, nil
+	dir, err = dir.WithSymlink(ctx, srv, target, containerPath)
+	if err != nil {
+		return nil, err
+	}
+	return container.WithRootFS(ctx, dir)
 }
 
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {

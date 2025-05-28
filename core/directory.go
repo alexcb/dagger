@@ -861,7 +861,7 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 	}
 
 	cache := dir.Query.BuildkitCache()
-	snap, err := symlink(ctx, cache, immutableRef, nil, target, linkName)
+	snap, err := symlink(ctx, cache, immutableRef, nil, target, path.Join(dir.Dir, linkName))
 	if err != nil {
 		return nil, err
 	}
