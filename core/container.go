@@ -300,15 +300,24 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	// mounts work on Windows, so...
 	parent := newMnt.Target + "/"
 
+	replaced := false
+
 	for _, mnt := range mnts {
 		if mnt.Target == newMnt.Target || strings.HasPrefix(mnt.Target, parent) {
+			// FIXME it should be possible to simply append this at the end; however, there's a bug somewhere
+			// related to the indexing of mounts, so as a hack we need to keep the order consistent
+			// in order to allow container.writeToPath() to work
+			mntsCp = append(mntsCp, newMnt)
+			replaced = true
 			continue
 		}
 
 		mntsCp = append(mntsCp, mnt)
 	}
 
-	mntsCp = append(mntsCp, newMnt)
+	if !replaced {
+		mntsCp = append(mntsCp, newMnt)
+	}
 
 	return mntsCp
 }
@@ -692,46 +701,22 @@ func (container *Container) WithNewFile(ctx context.Context, dest string, conten
 }
 
 func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Container, error) {
-	container = container.Clone()
-
-	containerPath := path.Clean(path.Join(container.Config.WorkingDir, linkName))
-	linkNameDirPath, _ := filepath.Split(containerPath)
-
-	dir, mount, err := locatePath(container, linkNameDirPath, NewDirectory)
-	if err != nil {
-		return nil, err
-	}
-	if mount != nil {
-		// symlink will be added to a mounted directory
-		newDir, err := dir.WithSymlink(ctx, srv, target, strings.TrimPrefix(containerPath, mount.Target+"/"))
-		if err != nil {
-			return nil, err
-		}
-		mount.Result = newDir.Result
-		return container, nil
-	}
-
-	dir, err = container.RootFS(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dir, err = dir.WithSymlink(ctx, srv, target, containerPath)
-	if err != nil {
-		return nil, err
-	}
-	return container.WithRootFS(ctx, dir)
+	dir, linkName := filepath.Split(filepath.Clean(linkName))
+	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
+		return dir.WithSymlink(ctx, srv, target, linkName)
+	})
 }
 
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, dir.LLB, dir.Dir, dir.Services, owner, readonly)
+	return container.withMounted(ctx, target, dir.LLB, dir.Result, dir.Dir, dir.Services, owner, readonly)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, file.LLB, file.File, file.Services, owner, readonly)
+	return container.withMounted(ctx, target, file.LLB, file.Result, file.File, file.Services, owner, readonly)
 }
 
 var SeenCacheKeys = new(sync.Map)
@@ -1049,6 +1034,7 @@ func (container *Container) withMounted(
 	ctx context.Context,
 	target string,
 	srcDef *pb.Definition,
+	result bkcache.ImmutableRef,
 	srcPath string,
 	svcs ServiceBindings,
 	owner string,
@@ -1069,6 +1055,7 @@ func (container *Container) withMounted(
 		SourcePath: srcPath,
 		Target:     target,
 		Readonly:   readonly,
+		Result:     result,
 	})
 
 	container.Services.Merge(svcs)
@@ -1182,7 +1169,7 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.withMounted(ctx, mount.Target, dir.LLB, mount.SourcePath, nil, "", false)
+	return container.withMounted(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, nil, "", false)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
