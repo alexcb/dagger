@@ -771,6 +771,7 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 
 // Load loads the instance with the given ID from the server.
 func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
+	fmt.Printf("ACB calling ID.Load id=%v\n", i.id)
 	val, err := server.Load(ctx, i.id)
 	if err != nil {
 		return Instance[T]{}, fmt.Errorf("load %s: %w", i.id.Display(), err)

@@ -65,7 +65,7 @@ func (s *directorySchema) Install() {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-		dagql.Func("withFile", s.withFile).
+		dagql.NodeFunc("withFile", DagOpDirectoryWrapper(s.srv, s.withFile, nil)).
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied file (e.g., "/file.txt").`),
@@ -321,13 +321,17 @@ type WithFileArgs struct {
 	Permissions *int
 }
 
-func (s *directorySchema) withFile(ctx context.Context, parent *core.Directory, args WithFileArgs) (*core.Directory, error) {
+func (s *directorySchema) withFile(ctx context.Context, parent dagql.Instance[*core.Directory], args WithFileArgs) (inst dagql.Instance[*core.Directory], err error) {
 	file, err := args.Source.Load(ctx, s.srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithFile(ctx, args.Path, file.Self, args.Permissions, nil)
+	dir, err := parent.Self.WithFileDagOp(ctx, s.srv, args.Path, file.Self, args.Permissions, nil)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 }
 
 type WithFilesArgs struct {
