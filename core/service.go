@@ -360,11 +360,11 @@ func (svc *Service) startContainer(
 		}
 
 		var st *llb.State
-		if pbmount.Input != pb.Empty {
-			st = &states[pbmount.Input]
-		} else if pbmount.Dest == buildkit.MetaMountDestPath {
+		if pbmount.Dest == buildkit.MetaMountDestPath {
 			v := MetaMountState(ctx, "")
 			st = &v
+		} else if pbmount.Input != pb.Empty {
+			st = &states[pbmount.Input]
 		}
 
 		if st != nil {

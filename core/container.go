@@ -1778,6 +1778,8 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		return nil, ErrNoSvcCommand
 	}
 
+	container = container.Clone()
+
 	useEntrypoint := args.UseEntrypoint
 	if len(container.Config.Entrypoint) > 0 && !container.DefaultArgs {
 		useEntrypoint = true
