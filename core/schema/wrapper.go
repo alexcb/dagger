@@ -135,6 +135,14 @@ func WithPathFn[T dagql.Typed, A any](pfn PathFunc[T, A]) DagOpOptsFn[T, A] {
 	}
 }
 
+func WithStaticPath[T dagql.Typed, A any](s string) DagOpOptsFn[T, A] {
+	return func(o *DagOpOpts[T, A]) {
+		o.pfn = func(ctx context.Context, val T, args A) (string, error) {
+			return s, nil
+		}
+	}
+}
+
 func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
 	var o DagOpOpts[T, A]
 	for _, optFn := range opts {
