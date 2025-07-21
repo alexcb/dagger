@@ -795,3 +795,10 @@ func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inpu
 		buildkit.WithPassthrough(),
 	)
 }
+
+// mustBeADagOp is a dummy interface which is used to give developers a compile-time hint
+// that a particular method can only be called from withing a dagop context
+type mustBeADagOp interface {
+	// ItsADagOp doesn't actually do anything, and is never called.
+	ItsADagOp()
+}

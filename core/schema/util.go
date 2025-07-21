@@ -73,3 +73,11 @@ var AllVersion = core.AllVersion
 
 type BeforeVersion = core.BeforeVersion
 type AfterVersion = core.AfterVersion
+
+// dagOpTypeSafe is used to denote that the call is being made withing the context of a dagop
+// this doesn't actually do anything at runtime, but is instead simply used as a compile-time check
+type dagOpTypeSafe struct{}
+
+func (_ *dagOpTypeSafe) ItsADagOp() {}
+
+var dagOpTypeSafeInst *dagOpTypeSafe

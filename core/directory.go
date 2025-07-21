@@ -244,7 +244,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 	return st, nil
 }
 
-func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, _ mustBeADagOp, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
 	useSlash, err := SupportsDirSlash(ctx)

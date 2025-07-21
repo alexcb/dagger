@@ -304,7 +304,7 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args entriesArgs) (dagql.Array[dagql.String], error) {
-	ents, err := parent.Self().Entries(ctx, args.Path.Value.String())
+	ents, err := parent.Self().Entries(ctx, dagOpTypeSafeInst, args.Path.Value.String())
 	if err != nil {
 		return nil, err
 	}
