@@ -31,6 +31,32 @@ func init() {
 	buildkit.RegisterCustomOp(ContainerDagOp{})
 }
 
+func NewDirectoryDagOpACB(
+	ctx context.Context,
+	srv *dagql.Server,
+	dagop *FSDagOp,
+	inputs []llb.State,
+	dir *Directory,
+) (*Directory, error) {
+
+	mnt := dir.LLB
+	stToIncludeInCacheMap, err := defToState(mnt)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("ACB what to do with %+v\n", stToIncludeInCacheMap)
+
+	st, err := newFSDagOp[*Directory](ctx, dagop, inputs)
+	if err != nil {
+		return nil, err
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	return NewDirectorySt(ctx, st, dagop.Path, query.Platform(), nil)
+}
+
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
 // for it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
@@ -120,6 +146,7 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 		op.ID.Digest().String(),
 		op.Path,
 	}, "\x00"))
+	fmt.Printf("ACB fsDagOp.CacheMap using ID=%s; path=%s\n", op.ID.Digest().String(), op.Path)
 	return cm, nil
 }
 
@@ -232,6 +259,7 @@ func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.C
 		op.ID.Digest().String(),
 		op.Filename,
 	}, "\x00"))
+	fmt.Printf("ACB raw CacheMap using ID=%s; path=%s\n", op.ID.Digest().String(), op.Filename)
 	return cm, nil
 }
 
@@ -525,6 +553,7 @@ func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*so
 		}
 	}
 
+	fmt.Printf("ACB ContainerDagOp.CacheMap returning digest %s\n", cm.Digest)
 	return cm, nil
 }
 

@@ -238,6 +238,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string)
 }
 
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
+	fmt.Printf("ACB dir.Entries was called\n")
 	src = path.Join(dir.Dir, src)
 	paths := []string{}
 	useSlash, err := SupportsDirSlash(ctx)
@@ -1059,6 +1060,7 @@ func (dir *Directory) Root() (*Directory, error) {
 }
 
 func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
+	fmt.Printf("ACB WithSymlink was called %s -> %s\n", linkName, target)
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {
 		linkName = path.Join(dir.Dir, linkName)
@@ -1068,6 +1070,10 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 			return err
 		}
 		err = os.MkdirAll(resolvedLinkDir, 0755)
+		if err != nil {
+			return err
+		}
+		err = os.MkdirAll(resolvedLinkDir+"/"+fmt.Sprintf("hello.%v", time.Now().UnixNano()), 0755)
 		if err != nil {
 			return err
 		}

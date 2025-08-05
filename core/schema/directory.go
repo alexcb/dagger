@@ -86,7 +86,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
 				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
 			),
-		dagql.NodeFunc("withoutFile", DagOpDirectoryWrapper(srv, s.withoutFile, WithPathFn(keepParentDir[withoutFileArgs]))).
+		dagql.NodeFunc("withoutFile", DagOpDirectoryWrapperACB(srv, s.withoutFile, WithPathFn(keepParentDir[withoutFileArgs]))).
 			Doc(`Return a snapshot with a file removed`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the file to remove (e.g., "/file.txt").`),
