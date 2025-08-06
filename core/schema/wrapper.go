@@ -181,6 +181,12 @@ func DagOpDirectoryACB[A any](
 ) (*core.Directory, error) {
 	o := getOpts(opts...)
 
+	argDigest, err := core.DigestOf(args)
+	if err != nil {
+		return nil, err
+	}
+	_ = argDigest
+
 	deps, err := extractLLBDependencies(ctx, dir)
 	if err != nil {
 		return nil, err
@@ -201,7 +207,8 @@ func DagOpDirectoryACB[A any](
 		// buildkit content caching
 		ID:   currentIDForFSDagOp(ctx, filename),
 		Path: filename,
-	}, deps, dir)
+		Hack: "yes-hack-this",
+	}, deps, argDigest, dir)
 }
 
 // NOTE: prefer DagOpDirectoryWrapper where possible, this is for low-level
