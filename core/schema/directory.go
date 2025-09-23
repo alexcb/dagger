@@ -79,7 +79,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-		dagql.NodeFunc("withFile", DagOpDirectoryWrapper(srv, s.withFile, WithPathFn(keepParentDir[WithFileArgs]))).
+		dagql.NodeFunc("withFile", DagOpDirectoryWrapperPrintf(srv, s.withFile, WithPathFn(keepParentDir[WithFileArgs]))).
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied file (e.g., "/file.txt").`),
@@ -553,6 +553,7 @@ type WithFileArgs struct {
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	fmt.Printf("ACB directorySchema.withFile called with %+v\n", args)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err

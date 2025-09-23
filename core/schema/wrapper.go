@@ -123,8 +123,29 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 ) dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.Directory]] {
 	return func(ctx context.Context, self dagql.ObjectResult[T], args A) (inst dagql.ObjectResult[*core.Directory], err error) {
 		if args.InDagOp() {
+			//fmt.Printf("ACB DagOpDirectoryWrapper indagop self=%+v args=%+v\n", self, args)
 			return fn(ctx, self, args)
 		}
+		//fmt.Printf("ACB DagOpDirectoryWrapper self=%+v args=%+v\n", self, args)
+		dir, err := DagOpDirectory(ctx, srv, self.Self(), args, "", fn, opts...)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	}
+}
+
+func DagOpDirectoryWrapperPrintf[T dagql.Typed, A DagOpInternalArgsIface](
+	srv *dagql.Server,
+	fn dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.Directory]],
+	opts ...DagOpOptsFn[T, A],
+) dagql.NodeFuncHandler[T, A, dagql.ObjectResult[*core.Directory]] {
+	return func(ctx context.Context, self dagql.ObjectResult[T], args A) (inst dagql.ObjectResult[*core.Directory], err error) {
+		if args.InDagOp() {
+			fmt.Printf("ACB DagOpDirectoryWrapper indagop self=%+v args=%+v\n", self, args)
+			return fn(ctx, self, args)
+		}
+		fmt.Printf("ACB DagOpDirectoryWrapper self=%+v args=%+v\n", self, args)
 		dir, err := DagOpDirectory(ctx, srv, self.Self(), args, "", fn, opts...)
 		if err != nil {
 			return inst, err
@@ -225,6 +246,10 @@ func DagOpDirectory[T dagql.Typed, A any](
 	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
 	if err != nil {
 		return nil, err
+	}
+	found := strings.HasPrefix(curIDForFSDagOp.Display(), "directory.withFile(path: \"myfiledst\"")
+	if found {
+		fmt.Printf("ACB using ID digest=%s display=%s\n", curIDForFSDagOp.Digest(), curIDForFSDagOp.Display())
 	}
 	return core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
 		// FIXME: using this in the cache key means we effectively disable

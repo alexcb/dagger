@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/dagger/dagger/engine/cache"
@@ -147,6 +148,7 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 				val = res.Result()
 				cached = res.HitCache()
 			}
+			fmt.Printf("ACB calling telemetry done cached=%v\n", cached)
 			done(val, cached, err)
 		}()
 		ctx = telemetryCtx

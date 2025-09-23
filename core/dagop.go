@@ -41,6 +41,9 @@ func NewDirectoryDagOp(
 	selfDigest digest.Digest,
 	argDigest digest.Digest,
 ) (*Directory, error) {
+
+	found := strings.HasPrefix(dagop.ID.Display(), "directory.withFile(path: \"myfiledst\"")
+
 	if selfDigest == "" || argDigest == "" {
 		// fall back to using op ID (which will return a different CacheMap value for each op
 		dagop.CacheKey = digest.FromString(
@@ -48,6 +51,9 @@ func NewDirectoryDagOp(
 				dagop.ID.Digest().String(),
 				dagop.Path,
 			}, "\x00"))
+		if found {
+			fmt.Printf("ACB using op ID based cache key %s\n", dagop.CacheKey)
+		}
 	} else {
 		dagop.CacheKey = digest.FromString(
 			strings.Join([]string{
@@ -55,6 +61,9 @@ func NewDirectoryDagOp(
 				argDigest.String(),
 			}, "\x00"),
 		)
+		if found {
+			fmt.Printf("ACB using self+arg based cache key %s\n", dagop.CacheKey)
+		}
 	}
 
 	st, err := newFSDagOp[*Directory](ctx, dagop, inputs)

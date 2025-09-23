@@ -220,6 +220,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 // recordStatus records the status of a call on a span.
 func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, err error, id *call.ID) {
 	if cached {
+		fmt.Printf("ACB setting CachedAttr to true here1\n")
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
 

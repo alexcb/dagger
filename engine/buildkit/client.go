@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime/debug"
+	"strings"
 	"sync"
 
 	"github.com/containerd/containerd"
@@ -146,14 +148,28 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	defer cancel(errors.New("solve done"))
 	ctx = withOutgoingContext(ctx)
 
+	//fmt.Printf("ACB Solve called by %s\n", debug.Stack())
+
 	recordOp := func(def *bksolverpb.Definition) error {
 		dag, err := DefToDAG(def)
 		if err != nil {
 			return err
 		}
+		found := false
+		//fmt.Printf("ACB here with dag=%+v\n", dag)
+		if dag != nil {
+			s := dag.String()
+			if strings.Contains(s, "myfiledst") {
+				found = true
+				fmt.Printf("ACB Solve %s (dgst=%s) called by %s\n", s, dag.OpDigest, debug.Stack())
+			}
+		}
 		spanCtx := trace.SpanContextFromContext(ctx)
 		c.opsmu.Lock()
 		_ = dag.Walk(func(od *OpDAG) error {
+			if found {
+				fmt.Printf("ACB Solve %s\n", od.OpDigest)
+			}
 			c.ops[*od.OpDigest] = opCtx{
 				od:  od,
 				ctx: spanCtx,

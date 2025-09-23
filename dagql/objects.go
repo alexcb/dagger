@@ -450,6 +450,7 @@ func NoopDone(res AnyResult, cached bool, rerr error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
+	//fmt.Printf("ACB Select %s\n", sel.String())
 	preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, err
@@ -537,8 +538,16 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		idArgs...,
 	)
 
+	found := strings.HasPrefix(newID.Display(), "directory.withFile(path: \"myfiledst\"")
+	if found {
+		fmt.Printf("ACB newID set to %s (display=%s)\n", newID.Digest(), newID.Display())
+	}
+
 	doNotCache := field.CacheSpec.DoNotCache != ""
 	if field.CacheSpec.GetCacheConfig != nil {
+		if found {
+			fmt.Printf("ACB changing newID due to GetCacheConfig\n")
+		}
 		origDgst := newID.Digest()
 
 		cacheCfgCtx := idToContext(ctx, newID)
@@ -606,6 +615,8 @@ func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (A
 	if err != nil {
 		return nil, err
 	}
+
+	//fmt.Printf("ACB making call, newID set to %s (using field=%s args=%v)\n", newID.Digest(), fieldName, inputArgs)
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
 	return r.call(ctx, s, newID, inputArgs, doNotCache)
@@ -681,7 +692,15 @@ func (r ObjectResult[T]) call(
 		cacheKey.ConcurrencyKey = clientMD.ClientID
 	}
 
+	found := strings.HasPrefix(newID.Display(), "directory.withFile(path: \"myfiledst\"")
+
+	if found {
+		fmt.Printf("ACB calling GetOrInitializeWithCallbacks for newID=%s display=%s inputargs=%+v\n", newID.Digest(), newID.Display(), inputArgs)
+	}
 	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, cacheKey, func(ctx context.Context) (*CacheValWithCallbacks, error) {
+		if found {
+			fmt.Printf("ACB GetOrInitializeWithCallbacks got callback for newID=%s display=%s inputArgs=%+v\n", newID.Digest(), newID.Display(), inputArgs)
+		}
 		valWithCallbacks, err := r.class.Call(ctx, s, r, newID.Field(), newID.View(), inputArgs)
 		if err != nil {
 			return nil, err
@@ -696,7 +715,13 @@ func (r ObjectResult[T]) call(
 		if !ok {
 			return nil, nil
 		}
+		if found {
+			fmt.Printf("ACB val=%+v\n", val)
+		}
 		nth := int(newID.Nth())
+		if found {
+			fmt.Printf("ACB nth=%d\n", nth)
+		}
 		if nth != 0 {
 			val, err = val.NthValue(nth)
 			if err != nil {
@@ -705,6 +730,9 @@ func (r ObjectResult[T]) call(
 			val, ok = val.DerefValue()
 			if !ok {
 				return nil, nil
+			}
+			if found {
+				fmt.Printf("ACB updated val=%+v\n", val)
 			}
 		}
 
@@ -735,6 +763,8 @@ func (r ObjectResult[T]) call(
 
 		// only need to add a new cache key if the returned val has a different custom digest than the original
 		digestChanged := valID.Digest() != newID.Digest()
+
+		//fmt.Printf("ACB digestChanged=%v\n", digestChanged)
 
 		// Corner case: the `id` field on an object returns an IDable value (IDs are themselves both values and IDable).
 		// However, if we cached `val` in this case, we would be caching <id digest> -> <id value>, which isn't what we

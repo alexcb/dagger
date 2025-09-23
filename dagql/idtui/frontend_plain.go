@@ -553,8 +553,11 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 			fmt.Fprint(fe.output, fe.output.String(" ERROR").Foreground(termenv.ANSIRed))
 		} else if span.IsCached() {
 			fmt.Fprint(fe.output, fe.output.String(" CACHED").Foreground(termenv.ANSIBlue))
+		} else if span.IsPending() {
+			fmt.Fprint(fe.output, fe.output.String(" PENDING-BUT-DONE").Foreground(termenv.ANSIBlue))
 		} else {
 			fmt.Fprint(fe.output, fe.output.String(" DONE").Foreground(termenv.ANSIGreen))
+			//fmt.Printf("ACB renderStep done, snapshot is %+v\n", span.Snapshot())
 		}
 		duration := dagui.FormatDuration(span.Activity.Duration(time.Now()))
 		fmt.Fprint(fe.output, fe.output.String(fmt.Sprintf(" [%s]", duration)).Foreground(termenv.ANSIBrightBlack))

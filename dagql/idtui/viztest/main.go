@@ -528,6 +528,24 @@ func (*Viztest) NestedCalls(ctx context.Context) ([]string, error) {
 		Entries(ctx)
 }
 
+func (*Viztest) Ugh(ctx context.Context) ([]string, error) {
+	return dag.Directory().
+		WithDirectory("/level-1",
+			dag.Directory().
+				WithFile("myfiledst", dag.File("myfilesrc", "hey"), dagger.DirectoryWithFileOpts{
+					Permissions: 0644,
+				})).
+		Entries(ctx)
+}
+
+func (*Viztest) Ughh(ctx context.Context) ([]string, error) {
+	return dag.Directory().
+		WithFile("myfiledst", dag.File("myfilesrc", "hey"), dagger.DirectoryWithFileOpts{
+			Permissions: 0644,
+		}).
+		Entries(ctx)
+}
+
 func (*Viztest) PathArgs(
 	ctx context.Context,
 	file *dagger.File,
