@@ -235,6 +235,9 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		c.ongoingCalls[key] = res
 	}
 
+	if acbutil.IsInteresting(fmt.Sprintf("%v", key.ResultKey)) {
+		fmt.Printf("ACB key=%s starting thread to call fn callback\n", key.ResultKey)
+	}
 	go func() {
 		defer close(res.waitCh)
 		valWithCallbacks, err := fn(callCtx)

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"runtime/debug"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -554,7 +555,7 @@ type WithFileArgs struct {
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
-	fmt.Printf("ACB directorySchema.withFile called with %+v\n", args)
+	fmt.Printf("ACB directorySchema.withFile called with %+v by %s\n", args, debug.Stack())
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err

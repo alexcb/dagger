@@ -153,7 +153,6 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 				fmt.Printf("ACB session_cache calling done key=%s res=%+v cached=%v\n", key, res, cached)
 			}
 			done(val, cached, err)
-		}
 		}()
 		ctx = telemetryCtx
 	}

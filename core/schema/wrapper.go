@@ -145,7 +145,7 @@ func DagOpDirectoryWrapperPrintf[T dagql.Typed, A DagOpInternalArgsIface](
 			fmt.Printf("ACB DagOpDirectoryWrapper indagop self=%+v args=%+v\n", self, args)
 			return fn(ctx, self, args)
 		}
-		fmt.Printf("ACB DagOpDirectoryWrapper self=%+v args=%+v\n", self, args)
+		fmt.Printf("ACB DagOpDirectoryWrapper creating dagop self=%+v args=%+v\n", self, args)
 		dir, err := DagOpDirectory(ctx, srv, self.Self(), args, "", fn, opts...)
 		if err != nil {
 			return inst, err

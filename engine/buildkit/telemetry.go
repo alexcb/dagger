@@ -2,6 +2,7 @@ package buildkit
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -161,6 +162,7 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 	llbOp, causeCtx, ok := sp.Client.LookupOp(vertex)
 	if !ok {
 		slog.Warn("op not found for vertex", "vertex", vertex)
+		panic(fmt.Sprintf("op not found for %v", vertex))
 		return
 	}
 
@@ -192,7 +194,7 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 	if cached {
 		span.SetName(spanName)
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
-		//fmt.Printf("ACB setting CachedAttr to true here2 for vertex digest:%s llbOp: %s\n", vertex, llbOp.String())
+		fmt.Printf("ACB setting CachedAttr to true here2 for vertex digest:%s llbOp: %s\n", vertex, llbOp.String())
 		//fmt.Printf("ACB setting CachedAttr to true here2 for vertex digest %s\n", vertex)
 	}
 

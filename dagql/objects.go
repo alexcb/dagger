@@ -301,6 +301,9 @@ func (class Class[T]) Call(
 		return nil, fmt.Errorf("Call: %s has no such field: %q", class.inner.Type().Name(), fieldName)
 	}
 
+	if strings.Contains(fmt.Sprintf("%v", args), "myfiledst") {
+		fmt.Printf("ACB calling field.Func node=%+v args=%+v\n", node, args)
+	}
 	val, err := field.Func(ctx, node, args, view)
 	if err != nil {
 		return nil, err

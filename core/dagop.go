@@ -135,36 +135,54 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 }
 
 func (op FSDagOp) Digest() (digest.Digest, error) {
-	return digest.FromString(strings.Join([]string{
-		engine.BaseVersion(engine.Version),
-		op.ID.Digest().String(),
-		op.Path,
-	}, "\x00")), nil
+	if op.CacheKey.String() == "" {
+		panic("CacheKey was not set")
+	}
+	return op.CacheKey, nil
+	//if op.CacheKey == "" {
+	//	panic("CacheKey was not set")
+	//}
+	//return digest.FromString(strings.Join([]string{
+	//	engine.BaseVersion(engine.Version),
+	//	op.CacheKey,
+	//	//op.ID.Digest().String(),
+	//	//op.Path,
+	//}, "\x00")), nil
 }
 
 func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
-	var inputs []string
 	if op.CacheKey.String() == "" {
-		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
-		inputs = []string{
-			engine.BaseVersion(engine.Version),
-			op.ID.Digest().String(),
-			op.Path,
-		}
-	} else {
-		inputs = []string{
-			engine.BaseVersion(engine.Version),
-			op.CacheKey.String(),
-		}
+		panic("CacheKey was not set")
 	}
-	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
+	cm.Digest = op.CacheKey
 	return cm, nil
+
+	//var inputs []string
+	//if op.CacheKey.String() == "" {
+	//	// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
+	//	inputs = []string{
+	//		engine.BaseVersion(engine.Version),
+	//		op.ID.Digest().String(),
+	//		op.Path,
+	//	}
+	//} else {
+	//	inputs = []string{
+	//		engine.BaseVersion(engine.Version),
+	//		op.CacheKey.String(),
+	//	}
+	//}
+	//cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
+	//return cm, nil
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
 	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
+	}
+	found := strings.HasPrefix(op.ID.Display(), "directory.withFile(path: \"myfiledst\"")
+	if found {
+		fmt.Printf("ACB FSDagOp.Exec called on id=%s\n", op.ID.Display())
 	}
 	ctx = ContextWithQuery(ctx, query)
 	obj, err := opt.Server.LoadType(ctx, op.ID)
@@ -894,6 +912,10 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 }
 
 func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inputs []llb.State) (llb.State, error) {
+	found := strings.HasPrefix(id.Display(), "directory.withFile(path: \"myfiledst\"")
+	if found {
+		fmt.Printf("ACB creating newContainerDagOp for id=%s\n", id.Display())
+	}
 	return buildkit.NewCustomLLB(ctx, dagOp, inputs,
 		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
 		buildkit.WithTracePropagation(ctx),
