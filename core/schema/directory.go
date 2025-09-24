@@ -349,6 +349,7 @@ type WithDirectoryArgs struct {
 }
 
 func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	fmt.Printf("ACB directorySchema.withDirectory called with %+v\n", args)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err

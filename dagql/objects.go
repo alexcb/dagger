@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/acbutil"
 )
 
 // Class is a class of Object types.
@@ -541,6 +542,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	found := strings.HasPrefix(newID.Display(), "directory.withFile(path: \"myfiledst\"")
 	if found {
 		fmt.Printf("ACB newID set to %s (display=%s)\n", newID.Digest(), newID.Display())
+		acbutil.Mark(string(newID.Digest()))
 	}
 
 	doNotCache := field.CacheSpec.DoNotCache != ""

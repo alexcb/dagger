@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/util/acbutil"
 )
 
 type CacheKeyType = string
@@ -148,15 +149,24 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 				val = res.Result()
 				cached = res.HitCache()
 			}
-			fmt.Printf("ACB calling telemetry done cached=%v\n", cached)
+			if acbutil.IsInteresting(string(key.ResultKey)) {
+				fmt.Printf("ACB session_cache calling done key=%s res=%+v cached=%v\n", key, res, cached)
+			}
 			done(val, cached, err)
+		}
 		}()
 		ctx = telemetryCtx
 	}
 
+	if acbutil.IsInteresting(string(key.ResultKey)) {
+		fmt.Printf("ACB session_cache key=%s session_cache calling fn=%v\n", key, fn)
+	}
 	res, err = c.cache.GetOrInitializeWithCallbacks(ctx, key, fn)
 	if err != nil {
 		return nil, err
+	}
+	if acbutil.IsInteresting(string(key.ResultKey)) {
+		fmt.Printf("ACB session_cache key=%s session_cache got back res=%+v cached=%v\n", key, res, res.HitCache())
 	}
 
 	c.mu.Lock()

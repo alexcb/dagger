@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/dagger/dagger/util/acbutil"
 )
 
 type Cache[K comparable, V any] interface {
@@ -195,6 +197,9 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	if res, ok := c.completedCalls[key.ResultKey]; ok {
 		res.refCount++
 		c.mu.Unlock()
+		if acbutil.IsInteresting(fmt.Sprintf("%v", key.ResultKey)) {
+			fmt.Printf("ACB key=%s is completedCalls\n", key.ResultKey)
+		}
 		return &perCallResult[K, V]{
 			result:   res,
 			hitCache: true,
@@ -206,6 +211,9 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 			// already an ongoing call
 			res.waiters++
 			c.mu.Unlock()
+			if acbutil.IsInteresting(fmt.Sprintf("%v", key.ResultKey)) {
+				fmt.Printf("ACB key=%s is already ongoing -- waiting\n", key.ResultKey)
+			}
 			return c.wait(ctx, res)
 		}
 	}
@@ -235,6 +243,9 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 			res.val = valWithCallbacks.Value
 			res.postCall = valWithCallbacks.PostCall
 			res.onRelease = valWithCallbacks.OnRelease
+		}
+		if acbutil.IsInteresting(fmt.Sprintf("%v", key.ResultKey)) {
+			fmt.Printf("ACB key=%s finished res=%+v\n", key.ResultKey, res)
 		}
 	}()
 

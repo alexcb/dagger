@@ -61,6 +61,12 @@ func AroundFunc(
 	}
 	spanName := fmt.Sprintf("%s.%s", base, id.Field())
 
+	//fmt.Printf("ACB AroundFunc %s\n", debug.Stack())
+	found := strings.HasPrefix(id.Display(), "directory.withFile(path: \"myfiledst\"")
+	if found {
+		fmt.Printf("ACB span name is %s display=%v\n", spanName, id.Display())
+	}
+
 	callAttr, err := id.Call().Encode()
 	if err != nil {
 		slog.Warn("failed to encode call", "id", id.Display(), "err", err)
@@ -119,6 +125,9 @@ func AroundFunc(
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
 	return ctx, func(res dagql.AnyResult, cached bool, err error) {
+		if found {
+			fmt.Printf("ACB span display=%s ended cached=%v\n", id.Display(), cached)
+		}
 		defer telemetry.End(span, func() error { return err })
 		recordStatus(ctx, res, span, cached, err, id)
 		logResult(ctx, res, self, id)
@@ -220,7 +229,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 // recordStatus records the status of a call on a span.
 func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, err error, id *call.ID) {
 	if cached {
-		fmt.Printf("ACB setting CachedAttr to true here1\n")
+		//fmt.Printf("ACB setting CachedAttr to true here1\n")
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
 
