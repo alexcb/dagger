@@ -2323,26 +2323,87 @@ func (container *Container) AsRecoveredService(ctx context.Context, richErr *bui
 	}, nil
 }
 
+func (container *Container) openFile(ctx context.Context, path string) (io.ReadCloser, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	mnt, mntSubpath, err := locatePath(container, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate path %s: %w", path, err)
+	}
+	if mnt != nil {
+		panic("TODO handle mnt")
+	}
+	args := []dagql.NamedInput{
+		{Name: "path", Value: dagql.String(mntSubpath)},
+	}
+
+	var passwd dagql.ObjectResult[*File]
+	err = srv.Select(ctx, container.FS, &passwd, dagql.Selector{
+		Field: "file",
+		Args:  args,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return passwd.Self().Open(ctx)
+}
+
 func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {
 	if owner == "" {
 		// do not change ownership
 		return nil, nil
 	}
 
-	fsSt, err := container.FSState()
+	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
+
+	var uid, gid int
+	var uname, gname string
+
+	uid, err := parseUID(uidOrName)
 	if err != nil {
-		return nil, err
+		uname = uidOrName
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
+	if hasGroup {
+		gid, err = parseUID(gidOrName)
+		if err != nil {
+			gname = gidOrName
+		}
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+
+	if uname != "" {
+		f, err := container.openFile(ctx, "/etc/passwd")
+		if err != nil {
+			return nil, fmt.Errorf("open /etc/passwd: %w", err)
+		}
+		defer f.Close()
+		uid, err = findUID(f, uname)
+		if err != nil {
+			return nil, fmt.Errorf("find uid: %w", err)
+		}
 	}
-	return resolveUIDGID(ctx, fsSt, bk, container.Platform, owner)
+
+	if gname != "" {
+		f, err := container.openFile(ctx, "/etc/group")
+		if err != nil {
+			return nil, fmt.Errorf("open /etc/passwd: %w", err)
+		}
+		defer f.Close()
+		gid, err = findGID(f, gname)
+		if err != nil {
+			return nil, fmt.Errorf("find gid: %w", err)
+		}
+	}
+
+	if !hasGroup {
+		gid = uid
+	}
+
+	return &Ownership{uid, gid}, nil
 }
 
 func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
