@@ -559,6 +559,13 @@ func (s *moduleSourceSchema) localModuleSource(
 	return dagql.NewResultForCurrentID(ctx, localSrc)
 }
 
+// isErrNotExist returns true if the error related to a file not existing
+// During the great dagopification, directory.File() changed from returning ErrNotExist to
+// a generic "no such file or directory" error -- so we need to handle both cases
+func isErrNotExist(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || strings.HasSuffix(err.Error(), "no such file or directory")
+}
+
 func (s *moduleSourceSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],
@@ -617,7 +624,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		// they find-up to a real dagger.json
 		statFS := core.NewCoreDirStatFS(gitSrc.ContextDirectory.Self(), bk)
 		if _, err := statFS.Stat(ctx, gitSrc.SourceRootSubpath); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+			if isErrNotExist(err) {
 				return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
 			}
 			return inst, fmt.Errorf("failed to stat git module source: %w", err)
@@ -661,7 +668,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		dagql.Selector{Field: "contents"},
 	)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if isErrNotExist(err) {
 			return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
 		}
 		return inst, fmt.Errorf("failed to load git module dagger config: %w", err)
@@ -2426,7 +2433,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if len(generatedCode.VCSGeneratedPaths) > 0 {
 		gitAttrsPath := filepath.Join(srcInst.Self().SourceSubpath, ".gitattributes")
 		var gitAttrsContents []byte
-		gitAttrsFile, err := srcInst.Self().ContextDirectory.Self().File(ctx, gitAttrsPath)
+		gitAttrsFile, err := srcInst.Self().ContextDirectory.Self().FileLLB(ctx, gitAttrsPath)
 		if err == nil {
 			gitAttrsContents, err = gitAttrsFile.Contents(ctx, nil, nil)
 			if err != nil {
@@ -2472,7 +2479,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
 		gitIgnorePath := filepath.Join(srcInst.Self().SourceSubpath, ".gitignore")
 		var gitIgnoreContents []byte
-		gitIgnoreFile, err := srcInst.Self().ContextDirectory.Self().File(ctx, gitIgnorePath)
+		gitIgnoreFile, err := srcInst.Self().ContextDirectory.Self().FileLLB(ctx, gitIgnorePath)
 		if err == nil {
 			gitIgnoreContents, err = gitIgnoreFile.Contents(ctx, nil, nil)
 			if err != nil {

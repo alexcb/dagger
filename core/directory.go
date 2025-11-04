@@ -649,6 +649,42 @@ func (e notADirectoryError) Unwrap() error {
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
+	dir = dir.Clone()
+	filePath := path.Join(dir.Dir, file)
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	found, err := dir.Exists(ctx, srv, file, ExistsTypeRegular, false)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("%s: no such file or directory", filePath)
+	}
+
+	dirRef, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get directory ref: %w", err)
+	}
+
+	return &File{
+		LLB:      dir.LLB,
+		Result:   dirRef,
+		File:     filePath,
+		Platform: dir.Platform,
+		Services: dir.Services,
+	}, nil
+}
+
+func (dir *Directory) FileLLB(ctx context.Context, file string) (*File, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
