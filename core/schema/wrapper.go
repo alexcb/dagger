@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
@@ -229,7 +230,10 @@ func getSelfDigest(ctx context.Context, a any) (digest.Digest, []llb.State, erro
 		}
 
 		var deps []llb.State
-		fsLLB := x.FS.Self().LLB
+		var fsLLB *pb.Definition
+		if x.FS != nil && x.FS.Self() != nil {
+			fsLLB = x.FS.Self().LLB
+		}
 		if fsLLB == nil || fsLLB.Def == nil {
 			deps = append(deps, llb.Scratch())
 		} else {
@@ -238,6 +242,10 @@ func getSelfDigest(ctx context.Context, a any) (digest.Digest, []llb.State, erro
 				return "", nil, err
 			}
 			deps = append(deps, llb.NewState(op))
+		}
+
+		if len(x.Mounts) > 0 {
+			return "", nil, fmt.Errorf("TODO: need to deal with Mounts")
 		}
 
 		return dgst, deps, err
