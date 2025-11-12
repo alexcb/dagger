@@ -612,25 +612,34 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	dgst, err := core.GetContentHashFromFile(ctx, bk, fileResult)
-	if err != nil {
-		return inst, err
+	// TODO move this logic into maintainContentHashing in a way that's generic for both File or Directory types
+	// FIXME before we can apply this patch, we also have apply a maintainContentHashing-like function to the directory.filter(); currently this change causes TestContainer/TestFileCaching/use_file_via_filter to fail
+	if parent.ID().HasCustomDigest() && parent.ID().Digest().Algorithm() == digest.SHA256 {
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, err
+		}
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+		dgst, err := core.GetContentHashFromFile(ctx, bk, fileResult)
+		if err != nil {
+			return inst, err
+		}
+
+		dgst = hashutil.HashStrings(
+			filename,
+			string(dgst),
+		)
+
+		if dgst != parent.ID().Digest() {
+			// only change if the digest is different (if it's the same, leave it as-is so it's a no-op)
+			fileResult = fileResult.WithObjectDigest(dgst)
+		}
 	}
 
-	dgst = hashutil.HashStrings(
-		filename,
-		string(dgst),
-	)
-
-	return fileResult.WithObjectDigest(dgst), nil
+	return fileResult, nil
 }
 
 type WithNewFileArgs struct {
