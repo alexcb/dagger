@@ -146,6 +146,7 @@ func init() {
 		upCmd,
 		generateCmd,
 		workspaceCmd,
+		migrateCmd,
 		moduleCmd,
 		moduleInitCmd,
 		moduleDepInstallCmd,
