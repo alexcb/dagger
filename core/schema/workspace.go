@@ -110,6 +110,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
+		dagql.NodeFunc("refreshModules", s.refreshModules).
+			Doc("Refresh lock entries for selected workspace-config modules.",
+				"This layers selective workspace refresh on top of the lockfile base.").
+			Args(
+				dagql.Arg("moduleNames").Doc("Workspace module names to refresh."),
+			).
+			Experimental("Experimental selective workspace lock refresh API."),
 		dagql.NodeFunc("update", s.update).
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
@@ -377,6 +384,7 @@ func (s *workspaceSchema) update(
 	}
 
 	return changes.Self(), nil
+	//return s.workspaceLockChangeset(ctx, ws, lock) // TODO ACB maybe this is needed?
 }
 
 // resolveWorkspacePath resolves a workspace API path into a boundary-relative path:
