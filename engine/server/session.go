@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -41,12 +42,15 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -102,6 +106,23 @@ type daggerSession struct {
 	interactiveCommand []string
 
 	allowedLLMModules []string
+
+	lockFiles  map[workspaceLockKey]*workspaceLockState
+	lockFileMu sync.RWMutex
+}
+
+type workspaceLockKey struct {
+	ownerClientID string
+	lockPath      string
+}
+
+type workspaceLockState struct {
+	ws       *core.Workspace
+	lockPath string
+	lock     *workspace.Lock
+	delta    *workspace.Lock
+	loaded   bool
+	dirty    bool
 }
 
 type daggerSessionState string
@@ -142,10 +163,11 @@ type daggerClient struct {
 	// if the client is coming from a module, this is that module
 	mod *core.Module
 
-	// the DAG of modules being served to this client
-	deps *core.ModDeps
+	// the set of modules being served to this client, with per-module
+	// install policy (constructor vs type-only)
+	servedMods *core.SchemaBuilder
 	// the default deps that each client/module starts out with (currently just core)
-	defaultDeps *core.ModDeps
+	defaultDeps *core.SchemaBuilder
 
 	// If the client is itself from a function call in a user module, this is set with the
 	// metadata of that ongoing function call
@@ -169,6 +191,29 @@ type daggerClient struct {
 
 	meterProvider  *sdkmetric.MeterProvider
 	metricExporter sdkmetric.Exporter
+
+	// Workspace and extra module loading is deferred from initializeDaggerClient
+	// to serveQuery because it requires the client's buildkit session, which
+	// isn't available during initialization (the session attachables request
+	// is blocked on the same locks that initializeDaggerClient holds).
+
+	// Whether this client should detect its own workspace and auto-load
+	// workspace modules from that workspace.
+	// True for non-module clients (main client and nested non-module clients);
+	// false for module clients (they inherit workspace binding and skip auto-load).
+	pendingWorkspaceLoad bool
+	workspaceMu          sync.Mutex
+	workspaceLoaded      bool
+	workspaceErr         error
+
+	// Cached workspace result from ensureWorkspaceLoaded.
+	workspace *core.Workspace
+
+	pendingModules      []pendingModule      // gathered in detectAndLoadWorkspaceWithRootfs
+	pendingExtraModules []engine.ExtraModule // populated from clientMD, can arrive late
+	modulesMu           sync.Mutex
+	modulesLoaded       bool
+	modulesErr          error
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -467,26 +512,8 @@ func (srv *Server) initializeDaggerClient(
 	// initialize all the buildkit+session attachable state for the client
 	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
 	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
-	if opts.CallID != nil {
-		if opts.CallerClientID == "" {
-			return fmt.Errorf("caller client ID is not set")
-		}
-		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: *opts.CallID}, opts.CallerClientID, true); err != nil {
-			return fmt.Errorf("failed to add client resources from ID: %w", err)
-		}
-	}
-	if opts.ParentIDs != nil {
-		if opts.CallerClientID == "" {
-			return fmt.Errorf("caller client ID is not set")
-		}
-		// we can use the caller client ID here (as opposed to the client ID of the parent function call)
-		// because any client resources returned by the parent function call will be added to the stores
-		// of the caller
-		for _, id := range opts.ParentIDs {
-			if err := srv.addClientResourcesFromID(ctx, client, id, opts.CallerClientID, false); err != nil {
-				return fmt.Errorf("failed to add parent client resources from ID: %w", err)
-			}
-		}
+	if err := srv.initClientResources(ctx, client, opts); err != nil {
+		return err
 	}
 
 	wc, err := buildkit.AsWorkerController(srv.worker)
@@ -626,9 +653,8 @@ func (srv *Server) initializeDaggerClient(
 	if err := coreMod.Install(ctx, client.dag); err != nil {
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
-	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-
-	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
+	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
@@ -656,12 +682,24 @@ func (srv *Server) initializeDaggerClient(
 		// }
 		// client.mod = modInst.Self
 
-		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Deps.Mods)
+		client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
+		for _, dep := range client.mod.Deps.Mods() {
+			client.servedMods = client.servedMods.With(dep, core.InstallOpts{})
+		}
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
-			client.deps = client.deps.Append(client.mod)
+			client.servedMods = client.servedMods.With(client.mod, core.InstallOpts{})
 		}
-		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
+	}
+
+	// Mark non-module clients for deferred workspace + extra module loading.
+	// Actual loading happens in serveQuery once the buildkit session is available.
+	if opts.EncodedModuleID == "" {
+		client.pendingWorkspaceLoad = true
+		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
+			client.pendingExtraModules = clientMD.ExtraModules
+		}
 	}
 
 	// configure OTel providers that export to SQLite
@@ -718,6 +756,33 @@ func (srv *Server) initializeDaggerClient(
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
 	client.state = clientStateInitialized
+	return nil
+}
+
+// initClientResources adds secrets/sockets from the call ID and parent IDs to
+// the client's stores.
+func (srv *Server) initClientResources(ctx context.Context, client *daggerClient, opts *ClientInitOpts) error {
+	if opts.CallID != nil {
+		if opts.CallerClientID == "" {
+			return fmt.Errorf("caller client ID is not set")
+		}
+		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: *opts.CallID}, opts.CallerClientID, true); err != nil {
+			return fmt.Errorf("failed to add client resources from ID: %w", err)
+		}
+	}
+	if opts.ParentIDs != nil {
+		if opts.CallerClientID == "" {
+			return fmt.Errorf("caller client ID is not set")
+		}
+		// we can use the caller client ID here (as opposed to the client ID of the parent function call)
+		// because any client resources returned by the parent function call will be added to the stores
+		// of the caller
+		for _, id := range opts.ParentIDs {
+			if err := srv.addClientResourcesFromID(ctx, client, id, opts.CallerClientID, false); err != nil {
+				return fmt.Errorf("failed to add parent client resources from ID: %w", err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -886,6 +951,21 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.AllowedLLMModules == nil {
 			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
 		}
+		if opts.SkipWorkspaceModules {
+			client.clientMetadata.SkipWorkspaceModules = true
+		}
+		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
+			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
+				ref := workspaceRef
+				client.clientMetadata.Workspace = &ref
+			}
+		}
+		// ExtraModules may arrive on a later request (e.g. /init) after the
+		// session attachable request already created the client without them.
+		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
+			client.clientMetadata.ExtraModules = opts.ExtraModules
+			client.pendingExtraModules = opts.ExtraModules
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -949,38 +1029,89 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
 // size.
 func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *buildkit.ExecutionMetadata) {
-	clientVersion := execMD.ClientVersionOverride
-	if clientVersion == "" {
-		clientVersion = engine.Version
-	}
-
-	allowedLLMModules := execMD.AllowedLLMModules
-	eagerRuntime := false
-	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
-		clientVersion = md.ClientVersion
-		allowedLLMModules = md.AllowedLLMModules
-		eagerRuntime = md.EagerRuntime
-	}
-
+	forwardedMD := readClientMetadata(r)
+	inheritedLockMode := srv.inheritedNestedClientLockMode(execMD)
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: &engine.ClientMetadata{
-			ClientID:          execMD.ClientID,
-			ClientVersion:     clientVersion,
-			ClientSecretToken: execMD.SecretToken,
-			SessionID:         execMD.SessionID,
-			ClientHostname:    execMD.Hostname,
-			ClientStableID:    execMD.ClientStableID,
-			Labels:            map[string]string{},
-			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
-			AllowedLLMModules: allowedLLMModules,
-			EagerRuntime:      eagerRuntime,
-		},
+		ClientMetadata:      nestedClientMetadata(execMD, forwardedMD, inheritedLockMode),
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
 		EncodedModuleID:     execMD.EncodedModuleID,
 		EncodedFunctionCall: execMD.EncodedFunctionCall,
 		ParentIDs:           execMD.ParentIDs,
 	}).ServeHTTP(w, r)
+}
+
+func readClientMetadata(r *http.Request) *engine.ClientMetadata {
+	md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header)
+	return md
+}
+
+func (srv *Server) inheritedNestedClientLockMode(execMD *buildkit.ExecutionMetadata) string {
+	if execMD == nil {
+		return ""
+	}
+	if execMD.LockMode != "" {
+		return execMD.LockMode
+	}
+	callerClient, err := srv.clientFromIDs(execMD.SessionID, execMD.CallerClientID)
+	if err != nil || callerClient == nil || callerClient.clientMetadata == nil {
+		return ""
+	}
+	if callerClient.clientMetadata.LockMode != "" {
+		return callerClient.clientMetadata.LockMode
+	}
+	for i := len(callerClient.parents) - 1; i >= 0; i-- {
+		parent := callerClient.parents[i]
+		if parent != nil && parent.clientMetadata != nil && parent.clientMetadata.LockMode != "" {
+			return parent.clientMetadata.LockMode
+		}
+	}
+	return ""
+}
+
+func nestedClientMetadata(execMD *buildkit.ExecutionMetadata, forwarded *engine.ClientMetadata, inheritedLockMode string) *engine.ClientMetadata {
+	clientVersion := execMD.ClientVersionOverride
+	if clientVersion == "" {
+		clientVersion = engine.Version
+	}
+
+	allowedLLMModules := execMD.AllowedLLMModules
+	var extraModules []engine.ExtraModule
+	var skipWorkspaceModules bool
+	lockMode := inheritedLockMode
+	var eagerRuntime bool
+	var workspaceRef *string
+	if forwarded != nil {
+		clientVersion = forwarded.ClientVersion
+		allowedLLMModules = forwarded.AllowedLLMModules
+		extraModules = forwarded.ExtraModules
+		skipWorkspaceModules = forwarded.SkipWorkspaceModules
+		if forwarded.LockMode != "" {
+			lockMode = forwarded.LockMode
+		}
+		eagerRuntime = forwarded.EagerRuntime
+		if declaredWorkspace, ok := workspaceRefFromClientMetadata(forwarded); ok {
+			ref := declaredWorkspace
+			workspaceRef = &ref
+		}
+	}
+
+	return &engine.ClientMetadata{
+		ClientID:             execMD.ClientID,
+		ClientVersion:        clientVersion,
+		ClientSecretToken:    execMD.SecretToken,
+		SessionID:            execMD.SessionID,
+		ClientHostname:       execMD.Hostname,
+		ClientStableID:       execMD.ClientStableID,
+		Labels:               map[string]string{},
+		SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
+		AllowedLLMModules:    allowedLLMModules,
+		ExtraModules:         extraModules,
+		SkipWorkspaceModules: skipWorkspaceModules,
+		LockMode:             lockMode,
+		EagerRuntime:         eagerRuntime,
+		Workspace:            workspaceRef,
+	}
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"
@@ -1155,6 +1286,22 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
+	// turn panics into graphql errors — must be set up before any code that
+	// could panic (including ensureExtraModulesLoaded and schema loading).
+	defer func() {
+		if v := recover(); v != nil {
+			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+			switch v := v.(type) {
+			case error:
+				rerr = gqlErr(v, http.StatusInternalServerError)
+			case string:
+				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
+			default:
+				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
+			}
+		}
+	}()
+
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
 	if trace.SpanContextFromContext(ctx).IsValid() {
@@ -1185,8 +1332,19 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	r = r.WithContext(ctx)
 
+	// Load workspace modules and extra modules (e.g. from -m flag). These are
+	// deferred from initializeDaggerClient because they need the client's
+	// buildkit session, which only becomes available after the session
+	// attachables handshake completes (after init locks are released).
+	if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil {
+		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
+	}
+	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
+		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
+	}
+
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
-	schema, err := client.deps.Schema(ctx)
+	schema, err := client.servedMods.Server(ctx)
 	if err != nil {
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
@@ -1199,21 +1357,6 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// 	slog.Debug("graphql response", "response", string(pl), "error", err)
 	// 	return res
 	// })
-
-	// turn panics into graphql errors
-	defer func() {
-		if v := recover(); v != nil {
-			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			switch v := v.(type) {
-			case error:
-				rerr = gqlErr(v, http.StatusInternalServerError)
-			case string:
-				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
-			default:
-				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
-			}
-		}
-	}()
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
@@ -1237,6 +1380,7 @@ func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *dag
 
 func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
+	var shutdownErr error
 
 	sess := client.daggerSession
 	slog := slog.With(
@@ -1254,6 +1398,12 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
+
+		flushCtx := context.WithoutCancel(ctx)
+		if err := srv.flushWorkspaceLocks(flushCtx, client); err != nil {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush workspace locks: %w", err))
+			slog.Error("failed to flush workspace locks", "error", err)
+		}
 
 		if len(sess.cacheExporterCfgs) > 0 {
 			ctx = context.WithoutCancel(ctx)
@@ -1297,17 +1447,22 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	slog.ExtraDebug("flushing session telemetry")
 	if err := sess.FlushTelemetry(ctx); err != nil {
 		slog.Error("failed to flush telemetry", "error", err)
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush session telemetry: %w", err))
 	}
 
 	client.closeShutdownOnce.Do(func() {
 		close(client.shutdownCh)
 	})
 
-	return nil
+	return shutdownErr
 }
 
-// Stitch in the given module to the list being served to the current client
-func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
+// Stitch in the given module to the list being served to the current client.
+// When includeDependencies is true, dependency modules and toolchains are
+// also served with their constructors on the Query root.
+// When entrypoint is true, the module's main-object methods are promoted
+// onto the Query root.
+func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool, entrypoint bool) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return err
@@ -1316,39 +1471,51 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	err = srv.serveModule(client, mod)
-	if err != nil {
+	if err := srv.serveModule(client, mod, core.InstallOpts{Entrypoint: entrypoint}); err != nil {
 		return err
 	}
 	if includeDependencies {
-		for _, depMod := range mod.Deps.Mods {
-			err = srv.serveModule(client, depMod)
-			if err != nil {
-				return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
+		for _, dep := range mod.Deps.Mods() {
+			if err := srv.serveModule(client, dep, core.InstallOpts{}); err != nil {
+				return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
+			}
+		}
+
+		// Also serve toolchains so their functions are available in the
+		// client schema (e.g. when `dagger shell` `.cd`s into a module).
+		if src := mod.GetSource(); src != nil {
+			for _, tcSrc := range src.Toolchains {
+				if tcSrc.Self() == nil {
+					continue
+				}
+				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc)
+				if err != nil {
+					return fmt.Errorf("error resolving toolchain module: %w", err)
+				}
+				if err := srv.serveModule(client, tcMod, core.InstallOpts{}); err != nil {
+					return fmt.Errorf("error serving toolchain %s: %w", tcMod.Name(), err)
+				}
 			}
 		}
 	}
 	return nil
 }
 
-// not threadsafe, client.stateMu must be held when calling
-func (srv *Server) serveModule(client *daggerClient, mod core.Mod) error {
-	// don't add the same module twice
-	// This can happen with generated clients since all remote dependencies are added
-	// on each connection and this could happen multiple times.
-	depMod, exist := client.deps.LookupDep(mod.Name())
-	if exist {
-		// Error if there's a conflict between dependencies
-		if !isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
+// serveModule adds a module to the client's served set with the given install
+// policy.
+//
+// Not threadsafe: client.stateMu must be held when calling.
+func (srv *Server) serveModule(client *daggerClient, mod core.Mod, opts core.InstallOpts) error {
+	existing, ok := client.servedMods.Lookup(mod.Name())
+	if ok {
+		if !isSameModuleReference(existing.GetSource(), mod.GetSource()) {
 			return fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
-				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), depMod.GetSource().AsString(), depMod.GetSource().Pin(),
+				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), existing.GetSource().AsString(), existing.GetSource().Pin(),
 			)
 		}
-
-		return nil
 	}
-
-	client.deps = client.deps.Append(mod)
+	// With handles deduplication and promotion internally.
+	client.servedMods = client.servedMods.With(mod, opts)
 	return nil
 }
 
@@ -1364,12 +1531,283 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 		return true
 	}
 
-	// If they are do not have the same reference nor same pin, they cannot be the same.
-	if a.AsString() != b.AsString() || a.Pin() != b.Pin() {
+	// Match by canonical module identity:
+	// - local: absolute source-code path (context dir + sourceSubpath)
+	// - git: clone ref + sourceSubpath
+	// plus pin equality for immutable provenance.
+	if canonicalModuleReference(a) != canonicalModuleReference(b) {
 		return false
 	}
+	return a.Pin() == b.Pin()
+}
+func (srv *Server) CurrentWorkspaceLock(ctx context.Context) (*workspace.Lock, bool, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, false, err
+	}
 
-	return true
+	ws, key, lockPath, ok, err := srv.currentWorkspaceLockBinding(client)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+
+	sess := client.daggerSession
+
+	sess.lockFileMu.RLock()
+	if state, ok := sess.lockFiles[key]; ok && state.loaded {
+		cloned, err := state.lock.Clone()
+		sess.lockFileMu.RUnlock()
+		return cloned, true, err
+	}
+	sess.lockFileMu.RUnlock()
+
+	sess.lockFileMu.Lock()
+	defer sess.lockFileMu.Unlock()
+
+	state, err := srv.loadWorkspaceLockStateLocked(ctx, client, ws, key, lockPath)
+	if err != nil {
+		return nil, false, err
+	}
+	cloned, err := state.lock.Clone()
+	if err != nil {
+		return nil, false, err
+	}
+	return cloned, true, nil
+}
+
+func (srv *Server) SetCurrentWorkspaceLookup(
+	ctx context.Context,
+	namespace string,
+	operation string,
+	inputs []any,
+	result workspace.LookupResult,
+) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	ws, key, lockPath, ok, err := srv.currentWorkspaceLockBinding(client)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("workspace lock is not available")
+	}
+
+	sess := client.daggerSession
+	sess.lockFileMu.Lock()
+	defer sess.lockFileMu.Unlock()
+
+	state, err := srv.loadWorkspaceLockStateLocked(ctx, client, ws, key, lockPath)
+	if err != nil {
+		return err
+	}
+	if err := state.lock.SetLookup(namespace, operation, inputs, result); err != nil {
+		return err
+	}
+	if err := state.delta.SetLookup(namespace, operation, inputs, result); err != nil {
+		return err
+	}
+	state.dirty = true
+	return nil
+}
+
+func (srv *Server) currentWorkspaceLockBinding(client *daggerClient) (*core.Workspace, workspaceLockKey, string, bool, error) {
+	ws := client.workspace
+	if ws == nil || ws.HostPath() == "" {
+		return nil, workspaceLockKey{}, "", false, nil
+	}
+	lockPath, err := workspaceLockPath(ws)
+	if err != nil {
+		return nil, workspaceLockKey{}, "", false, err
+	}
+	return ws, workspaceLockKey{
+		ownerClientID: ws.ClientID,
+		lockPath:      lockPath,
+	}, lockPath, true, nil
+}
+
+func (srv *Server) loadWorkspaceLockStateLocked(
+	ctx context.Context,
+	client *daggerClient,
+	ws *core.Workspace,
+	key workspaceLockKey,
+	lockPath string,
+) (*workspaceLockState, error) {
+	sess := client.daggerSession
+	if sess.lockFiles == nil {
+		sess.lockFiles = make(map[workspaceLockKey]*workspaceLockState)
+	}
+	if state, ok := sess.lockFiles[key]; ok && state.loaded {
+		return state, nil
+	}
+
+	workspaceCtx, bk, err := srv.workspaceOwnerAccess(ctx, sess, ws)
+	if err != nil {
+		return nil, err
+	}
+	lock, _, err := readWorkspaceLockState(workspaceCtx, bk, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	state := &workspaceLockState{
+		ws:       ws.Clone(),
+		lockPath: lockPath,
+		lock:     lock,
+		delta:    workspace.NewLock(),
+		loaded:   true,
+	}
+	sess.lockFiles[key] = state
+	return state, nil
+}
+
+func (srv *Server) workspaceOwnerAccess(
+	ctx context.Context,
+	sess *daggerSession,
+	ws *core.Workspace,
+) (context.Context, *buildkit.Client, error) {
+	if ws.ClientID == "" {
+		return nil, nil, fmt.Errorf("workspace has no client ID")
+	}
+
+	ownerClient, err := srv.clientFromIDs(sess.sessionID, ws.ClientID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("workspace owner client: %w", err)
+	}
+	if ownerClient.clientMetadata == nil {
+		return nil, nil, fmt.Errorf("workspace owner client metadata not initialized")
+	}
+	if ownerClient.bkClient == nil {
+		return nil, nil, fmt.Errorf("workspace owner buildkit client not initialized")
+	}
+
+	workspaceCtx := engine.ContextWithClientMetadata(ctx, ownerClient.clientMetadata)
+	return workspaceCtx, ownerClient.bkClient, nil
+}
+
+func workspaceLockPath(ws *core.Workspace) (string, error) {
+	if ws == nil {
+		return "", fmt.Errorf("workspace is required")
+	}
+	if ws.HostPath() == "" {
+		return "", fmt.Errorf("workspace has no host path")
+	}
+	return filepath.Join(ws.HostPath(), ws.Path, workspace.LockDirName, workspace.LockFileName), nil
+}
+
+func readWorkspaceLockState(ctx context.Context, bk interface {
+	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
+}, ws *core.Workspace) (*workspace.Lock, bool, error) {
+	lockPath, err := workspaceLockPath(ws)
+	if err != nil {
+		return nil, false, err
+	}
+
+	data, err := bk.ReadCallerHostFile(ctx, lockPath)
+	if err != nil {
+		if isWorkspaceLockNotFound(err) {
+			return workspace.NewLock(), false, nil
+		}
+		return nil, false, fmt.Errorf("reading lock: %w", err)
+	}
+
+	lock, err := workspace.ParseLock(data)
+	if err != nil {
+		return nil, false, fmt.Errorf("parsing lock: %w", err)
+	}
+	return lock, true, nil
+}
+
+func isWorkspaceLockNotFound(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+func exportWorkspaceLockToHost(ctx context.Context, bk *buildkit.Client, ws *core.Workspace, lock *workspace.Lock) error {
+	lockBytes, err := lock.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshal lock: %w", err)
+	}
+
+	lockPath, err := workspaceLockPath(ws)
+	if err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp("", "workspace-lock-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(lockBytes); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	if err := bk.LocalFileExport(ctx, tmpFile.Name(), workspace.LockFileName, lockPath, true); err != nil {
+		return fmt.Errorf("export lock: %w", err)
+	}
+	return nil
+}
+
+func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient) error {
+	sess := client.daggerSession
+
+	type pendingWorkspaceLockExport struct {
+		ws       *core.Workspace
+		lockPath string
+		delta    *workspace.Lock
+	}
+
+	var pending []pendingWorkspaceLockExport
+
+	sess.lockFileMu.RLock()
+	for _, state := range sess.lockFiles {
+		if state == nil || !state.loaded || !state.dirty {
+			continue
+		}
+		delta, err := state.delta.Clone()
+		if err != nil {
+			sess.lockFileMu.RUnlock()
+			return fmt.Errorf("clone workspace lock delta for %s: %w", state.lockPath, err)
+		}
+		pending = append(pending, pendingWorkspaceLockExport{
+			ws:       state.ws.Clone(),
+			lockPath: state.lockPath,
+			delta:    delta,
+		})
+	}
+	sess.lockFileMu.RUnlock()
+
+	var flushErr error
+	for _, export := range pending {
+		srv.locker.Lock(export.lockPath)
+
+		workspaceCtx, bk, err := srv.workspaceOwnerAccess(ctx, sess, export.ws)
+		if err == nil {
+			var latest *workspace.Lock
+			latest, _, err = readWorkspaceLockState(workspaceCtx, bk, export.ws)
+			if err == nil {
+				err = latest.Merge(export.delta)
+			}
+			if err == nil {
+				err = exportWorkspaceLockToHost(workspaceCtx, bk, export.ws, latest)
+			}
+		}
+
+		srv.locker.Unlock(export.lockPath)
+
+		if err != nil {
+			flushErr = errors.Join(flushErr, fmt.Errorf("flush workspace lock %s: %w", export.lockPath, err))
+		}
+	}
+
+	return flushErr
 }
 
 // If the current client is coming from a function, return the module that function is from
@@ -1418,13 +1856,13 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 	return client.fnCall, nil
 }
 
-// Return the list of deps being served to the current client
-func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error) {
+// Return the modules being served to the current client
+func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.SchemaBuilder, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return client.deps, nil
+	return client.servedMods, nil
 }
 
 // The Client metadata of the main client caller (i.e. the one who created the
@@ -1485,7 +1923,7 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 }
 
 // The default deps of every user module (currently just core)
-func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
+func (srv *Server) DefaultDeps(ctx context.Context) (*core.SchemaBuilder, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err

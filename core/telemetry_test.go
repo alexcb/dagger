@@ -8,6 +8,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -35,7 +36,7 @@ type mockServer struct {
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata) {
 }
 
-func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error {
+func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool, entrypoint bool) error {
 	return nil
 }
 
@@ -66,8 +67,8 @@ func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error
 	return ms.functionCall, nil
 }
 
-func (ms *mockServer) CurrentServedDeps(context.Context) (*ModDeps, error) {
-	return &ModDeps{}, nil
+func (ms *mockServer) CurrentServedDeps(context.Context) (*SchemaBuilder, error) {
+	return NewSchemaBuilder(nil, nil), nil
 }
 
 func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
@@ -81,10 +82,22 @@ func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.C
 	return nil, nil
 }
 
+func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
+	return nil, nil
+}
+
+func (ms *mockServer) CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error) {
+	return nil, false, nil
+}
+
+func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error {
+	return nil
+}
+
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
-func (ms *mockServer) DefaultDeps(context.Context) (*ModDeps, error)           { return nil, nil }
+func (ms *mockServer) DefaultDeps(context.Context) (*SchemaBuilder, error)     { return nil, nil }
 func (ms *mockServer) Cache(context.Context) (*dagql.SessionCache, error)      { return nil, nil }
 func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }
 func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error { return nil }
