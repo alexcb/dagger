@@ -8100,6 +8100,11 @@ func (m *Test) Str() string {
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
+	args = rewriteLegacyModuleInitTestArgs(args)
+	return daggerExecRaw(args...)
+}
+
+func daggerExecRaw(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
@@ -8108,6 +8113,7 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerExecFail(args ...string) dagger.WithContainerFunc {
+	args = rewriteLegacyModuleInitTestArgs(args)
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
@@ -8117,6 +8123,7 @@ func daggerExecFail(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
+	args = rewriteLegacyModuleInitTestArgs(args)
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
 			// Don't persist stable client id between runs. this matches the behavior
@@ -8239,6 +8246,11 @@ func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerF
 
 // command for a dagger cli call direct on the host
 func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
+	args = rewriteLegacyModuleInitTestArgs(args)
+	return hostDaggerCommandRaw(ctx, t, workdir, args...)
+}
+
+func hostDaggerCommandRaw(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
 	t.Helper()
 	cmd := exec.Command(daggerCliPath(t), args...)
 	cleanupExec(t, cmd)
@@ -8256,6 +8268,30 @@ func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...s
 		err = fmt.Errorf("%s: %w", string(output), err)
 	}
 	return output, err
+}
+
+func hostDaggerExecRaw(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) { //nolint: unparam
+	t.Helper()
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("%s: %w", string(output), err)
+	}
+	return output, err
+}
+
+// Most integration tests still express module creation as top-level `dagger init`.
+// Translate those calls to `dagger module init` while the product command surface
+// moves to workspace-first `dagger init`.
+func rewriteLegacyModuleInitTestArgs(args []string) []string {
+	if len(args) == 0 || args[0] != "init" {
+		return args
+	}
+
+	rewritten := make([]string, 0, len(args)+1)
+	rewritten = append(rewritten, "module", "init")
+	rewritten = append(rewritten, args[1:]...)
+	return rewritten
 }
 
 func cleanupExec(t testing.TB, cmd *exec.Cmd) {
