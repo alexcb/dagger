@@ -969,7 +969,271 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	if err := dirSrc.LoadUserDefaults(ctx); err != nil {
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
+	//dirSrc.Digest = dirSrc.CalcDigest(ctx).String()
 	return inst, nil
+}
+
+func (s *moduleSourceSchema) contextDirectory(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		Path string
+		core.CopyFilter
+
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the pinned version of the module source, when relevant
+		Pin string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.Directory], err error) {
+	// Load the module based on its content hashed key as saved in ModuleSource.asModule.
+	// We can't accept an actual Module as an argument because the current caching logic
+	// will result in that Module being re-loaded by clients (due to it being CachePerClient)
+	// and then possibly trying to load it from the wrong context (in the case of a cached
+	// result including a _contextDirectory call).
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	src, err := s.loadContextualModuleSource(ctx, dag, args.Module, args.Pin, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := src.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, dir.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create directory result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host dir loads, which
+	// can lead function calls encountering cached results that include contextual
+	// dir loads from older sessions to load from the wrong path
+	// FIXME:(sipsma) this is not ideal since contextual loaded dirs will have
+	// different cache keys than normally loaded host dirs. Support for multiple
+	// cache keys per result should help fix this.
+	dirID, err := dir.ID()
+	if err != nil {
+		return inst, err
+	}
+	dirDgst := dirID.ContentDigest()
+	if dirDgst == "" {
+		dirDgst = dirID.Digest()
+	}
+	dgst := hashutil.HashStrings(dirDgst.String(), "contextualDir")
+	return inst.WithContentDigest(ctx, dgst)
+}
+
+func (s *moduleSourceSchema) contextFile(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		Path string
+
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the pinned version of the module source, when relevant
+		Pin string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.File], err error) {
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	src, err := s.loadContextualModuleSource(ctx, dag, args.Module, args.Pin, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+	f, err := src.Self().LoadContextFile(ctx, dag, args.Path)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, f.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create directory result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host file loads, which
+	// can lead function calls encountering cached results that include contextual
+	// file loads from older sessions to load from the wrong path
+	// FIXME:(sipsma) this is not ideal since contextual loaded files will have
+	// different cache keys than normally loaded host files. Support for multiple
+	// cache keys per result should help fix this.
+	fID, err := f.ID()
+	if err != nil {
+		return inst, err
+	}
+	fDgst := fID.ContentDigest()
+	if fDgst == "" {
+		fDgst = fID.Digest()
+	}
+	dgst := hashutil.HashStrings(fDgst.String(), "contextualFile")
+	return inst.WithContentDigest(ctx, dgst)
+}
+
+func (s *moduleSourceSchema) contextGitRepository(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the pinned version of the module source, when relevant
+		Pin string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	src, err := s.loadContextualModuleSource(ctx, dag, args.Module, args.Pin, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+	f, err := src.Self().LoadContextGit(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, f.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create git repository result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host file loads, which
+	// can lead function calls encountering cached results that include contextual
+	// file loads from older sessions to load from the wrong path
+	fID, err := f.ID()
+	if err != nil {
+		return inst, err
+	}
+	fDgst := fID.ContentDigest()
+	if fDgst == "" {
+		fDgst = fID.Digest()
+	}
+	dgst := hashutil.HashStrings(fDgst.String(), "contextualGitRepository")
+	return inst.WithContentDigest(ctx, dgst)
+}
+
+func (s *moduleSourceSchema) contextGitRef(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the pinned version of the module source, when relevant
+		Pin string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.GitRef], err error) {
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	src, err := s.loadContextualModuleSource(ctx, dag, args.Module, args.Pin, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+	f, err := src.Self().LoadContextGit(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git ref: %w", err)
+	}
+
+	var gitRef dagql.ObjectResult[*core.GitRef]
+	err = dag.Select(ctx, f, &gitRef,
+		dagql.Selector{
+			Field: "head",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("load contextual git ref: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, gitRef.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create git ref result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host file loads, which
+	// can lead function calls encountering cached results that include contextual
+	// file loads from older sessions to load from the wrong path
+	fID, err := f.ID()
+	if err != nil {
+		return inst, err
+	}
+	fDgst := fID.ContentDigest()
+	if fDgst == "" {
+		fDgst = fID.Digest()
+	}
+	dgst := hashutil.HashStrings(fDgst.String(), "contextualGitRef")
+	return inst.WithContentDigest(ctx, dgst)
+}
+
+func (s *moduleSourceSchema) loadContextualModuleSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	moduleRef string,
+	modulePin string,
+	digestKey string,
+) (src dagql.ObjectResult[*core.ModuleSource], err error) {
+	mod, err := core.GetModuleFromContentDigest(ctx, dag, moduleRef, digestKey)
+	switch {
+	case err == nil:
+		if !mod.Self().Source.Valid {
+			return src, fmt.Errorf("module %q has no source", moduleRef)
+		}
+		return mod.Self().Source.Value, nil
+	case !errors.Is(err, core.ErrModuleContentDigestCacheMiss):
+		return src, err
+	case moduleRef == "":
+		return src, err
+	}
+
+	args := []dagql.NamedInput{
+		{Name: "refString", Value: dagql.String(moduleRef)},
+		{Name: "disableFindUp", Value: dagql.Boolean(true)},
+	}
+	if modulePin != "" {
+		args = append(args, dagql.NamedInput{Name: "refPin", Value: dagql.String(modulePin)})
+	}
+	if err := dag.Select(ctx, dag.Root(), &src, dagql.Selector{
+		Field: "moduleSource",
+		Args:  args,
+	}); err != nil {
+		return src, fmt.Errorf("reload module source %q: %w", moduleRef, err)
+	}
+
+	// TODO ACB needs merging?
+	// reloadedDigestKey := hashutil.HashStrings(
+	// 	src.Self().Digest,
+	// 	src.Self().ContentCacheScope(),
+	// 	"asModule",
+	// ).String()
+	// if reloadedDigestKey != digestKey {
+	// 	return src, fmt.Errorf(
+	// 		"reloaded module source %q has content digest %q, expected %q",
+	// 		moduleRef,
+	// 		reloadedDigestKey,
+	// 		digestKey,
+	// 	)
+	// }
+
+	return src, nil
 }
 
 // set values in the given src using values read from the module config file provided as bytes

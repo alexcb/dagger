@@ -1221,6 +1221,12 @@ func (src *ModuleSource) LoadContextDir(
 			Value: dagql.NewBoolean(true),
 		})
 	}
+	if pin := src.Pin(); pin != "" {
+		filterInputs = append(filterInputs, dagql.NamedInput{
+			Name:  "pin",
+			Value: dagql.String(pin),
+		})
+	}
 
 	// Check if there's an Env - if so, use its workspace as the context for
 	// defaultPath arguments.
@@ -1523,16 +1529,26 @@ func (src *ModuleSource) LoadContextFile(
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
+		fileInputs := []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(path)},
+			{Name: "noCache", Value: dagql.Boolean(true)},
+		}
+		if pin := src.Pin(); pin != "" {
+
+			fileInputs = append(fileInputs, dagql.NamedInput{
+				Name:  "pin",
+				Value: dagql.String(pin),
+			})
+
+		}
+
 		err = dag.Select(localSourceCtx, dag.Root(), &inst,
 			dagql.Selector{
 				Field: "host",
 			},
 			dagql.Selector{
 				Field: "file",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(path)},
-					{Name: "noCache", Value: dagql.Boolean(true)},
-				},
+				Args:  fileInputs,
 			},
 		)
 		if err != nil {
@@ -1590,17 +1606,22 @@ func (src *ModuleSource) LoadContextGit(
 	dag *dagql.Server,
 ) (inst dagql.ObjectResult[*GitRepository], err error) {
 	if src.Kind == ModuleSourceKindGit {
+		args := []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(src.Git.CloneRef)},
+			// NOTE: pin HEAD to the module's git commit and ref
+			// this matches the behavior of calling a checked out local source module
+			{Name: "commit", Value: dagql.String(src.Git.Commit)},
+			{Name: "ref", Value: dagql.String(src.Git.Ref)},
+		}
+		if pin := src.Pin(); pin != "" {
+			args = append(args, dagql.NamedInput{Name: "pin", Value: dagql.String(pin)})
+		}
+
 		// easy, we're running a git repo
 		err := dag.Select(ctx, dag.Root(), &inst,
 			dagql.Selector{
 				Field: "git",
-				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(src.Git.CloneRef)},
-					// NOTE: pin HEAD to the module's git commit and ref
-					// this matches the behavior of calling a checked out local source module
-					{Name: "commit", Value: dagql.String(src.Git.Commit)},
-					{Name: "ref", Value: dagql.String(src.Git.Ref)},
-				},
+				Args:  args,
 			},
 		)
 		if err != nil {

@@ -4,17 +4,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/vektah/gqlparser/v2/ast"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type Module struct {
@@ -187,6 +191,51 @@ func (mod *Module) GetContextSource() *ModuleSource {
 		return nil
 	}
 	return mod.ContextSource.Value.Self()
+}
+
+var ErrModuleContentDigestCacheMiss = errors.New("module not found from content digest")
+
+// GetModuleFromContentDigest loads a module based on the same content+provenance key used
+// in ModuleSource.asModule. We sometimes can't directly load a Module because the current
+// caching logic will result in that Module being re-loaded by clients (due to it being
+// CachePerClient) and then possibly trying to load it from the wrong context (in the case
+// of a cached result including a _contextDirectory call).
+func GetModuleFromContentDigest(
+	ctx context.Context,
+	dag *dagql.Server,
+	modName string,
+	dgst string,
+) (inst dagql.ObjectResult[*Module], err error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("git remote cache session metadata: %w", err)
+	}
+
+	cacheKey := hashutil.HashStrings(dgst, md.SessionID).String()
+	cacheRes, err := cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
+		return nil, fmt.Errorf("%w: %s", ErrModuleContentDigestCacheMiss, modName)
+	})
+	if err != nil {
+		return inst, err
+	}
+	if cacheRes == nil {
+		return inst, fmt.Errorf("module cache returned nil result for key %q", cacheKey)
+	}
+	inst, ok := cacheRes.Value().(dagql.ObjectResult[*Module])
+	if !ok {
+		return inst, fmt.Errorf("cached module has unexpected type: %T", cacheRes.Value())
+	}
+
+	return inst, nil
 }
 
 func ImplementationScopedModule(

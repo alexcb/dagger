@@ -1060,6 +1060,7 @@ func (fn *ModuleFunction) loadContextualArg(
 
 	switch arg.TypeDef.Self().AsObject.Value.Self().Name {
 	case "Directory":
+		// TODO ACB do we also need to pass along contentCacheKey := fn.mod.Self().ContentDigestCacheKey()
 		dir, err := fn.mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
 			Exclude: arg.Ignore,
 		})
