@@ -9,7 +9,6 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
@@ -396,57 +395,6 @@ func resolveModuleSourceLookupResult(
 		Value:  gitRef.Self().Ref.SHA,
 		Policy: policy,
 	}, nil
-}
-
-func parseGitLookupInputs(operation string, inputs []any) (string, string, error) {
-	if len(inputs) != 2 {
-		return "", "", fmt.Errorf("invalid %s inputs %v", operation, inputs)
-	}
-	remoteURL, ok := inputs[0].(string)
-	if !ok || remoteURL == "" {
-		return "", "", fmt.Errorf("invalid %s remote %v", operation, inputs[0])
-	}
-	name, ok := inputs[1].(string)
-	if !ok || name == "" {
-		return "", "", fmt.Errorf("invalid %s name %v", operation, inputs[1])
-	}
-	return remoteURL, name, nil
-}
-
-func resolveGitRefCommit(ctx context.Context, remoteURL, field, name string) (string, error) {
-	ctx = lookupRefreshContext(ctx)
-
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return "", fmt.Errorf("query server: %w", err)
-	}
-
-	var repo dagql.ObjectResult[*core.GitRepository]
-	if err := srv.Select(ctx, srv.Root(), &repo,
-		dagql.Selector{
-			Field: "git",
-			Args: []dagql.NamedInput{
-				{Name: "url", Value: dagql.NewString(remoteURL)},
-			},
-		},
-	); err != nil {
-		return "", fmt.Errorf("load git repo %q: %w", remoteURL, err)
-	}
-
-	var ref dagql.ObjectResult[*core.GitRef]
-	refSelector := dagql.Selector{Field: field}
-	if name != "" {
-		refSelector.Args = []dagql.NamedInput{{Name: "name", Value: dagql.NewString(name)}}
-	}
-	if err := srv.Select(ctx, repo, &ref, refSelector); err != nil {
-		return "", fmt.Errorf("resolve %s %q for %q: %w", field, name, remoteURL, err)
-	}
-
-	var commit dagql.String
-	if err := srv.Select(ctx, ref, &commit, dagql.Selector{Field: "commit"}); err != nil {
-		return "", fmt.Errorf("load commit for %s %q: %w", field, name, err)
-	}
-	return commit.String(), nil
 }
 
 func lookupRefreshContext(ctx context.Context) context.Context {

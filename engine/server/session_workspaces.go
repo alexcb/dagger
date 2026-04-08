@@ -439,9 +439,9 @@ func workspaceConfigPendingModules(
 	ws *workspace.Workspace,
 	cfg *workspace.Config,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
-) ([]pendingModule, error) {
+) []pendingModule {
 	if cfg == nil || len(cfg.Modules) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	names := make([]string, 0, len(cfg.Modules))
@@ -472,7 +472,7 @@ func workspaceConfigPendingModules(
 		pending = append(pending, mod)
 	}
 
-	return pending, nil
+	return pending
 }
 
 func pendingLegacyModule(
@@ -614,10 +614,10 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		return nil
 	}
 
-	pending, err := workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
-	if err != nil {
-		return err
-	}
+	// --- Gather all modules to load ---
+	var pending []pendingModule
+
+	pending = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
 
 	// (1) Ambient compat-workspace modules projected from legacy dagger.json.
 	if compatWorkspace != nil {
