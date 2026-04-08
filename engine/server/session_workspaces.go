@@ -649,10 +649,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				Ref:               resolveLocalRef(ws, rel),
 				Name:              compatWorkspace.MainModule.Name,
 				Entrypoint:        compatWorkspace.MainModule.Entry.Entrypoint,
-				legacyFieldPolicy: legacyWorkspaceFieldPolicyDirect,
-			}
-			if compatWorkspace.MainModule.StripLegacyWorkspaceFields {
-				mod.legacyFieldPolicy = legacyWorkspaceFieldPolicyStripCompatMain
+				legacyFieldPolicy: legacyWorkspaceFieldPolicyStripCompatMain,
 			}
 			pending = append(pending, mod)
 		}
