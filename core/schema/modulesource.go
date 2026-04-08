@@ -164,33 +164,39 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withBlueprint", s.moduleSourceWithBlueprint).
 			Doc(`Set a blueprint for the module source.`).
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.").
 			Args(
 				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
 			),
 
 		dagql.Func("withToolchains", s.moduleSourceWithToolchains).
 			Doc(`Add toolchains to the module source.`).
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.").
 			Args(
 				dagql.Arg("toolchains").Doc(`The toolchain modules to add.`),
 			),
 
 		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
 			Doc(`Update one or more toolchains.`).
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.").
 			Args(
 				dagql.Arg("toolchains").Doc(`The toolchains to update.`),
 			),
 
 		dagql.Func("withoutToolchains", s.moduleSourceWithoutToolchains).
 			Doc(`Remove the provided toolchains from the module source.`).
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.").
 			Args(
 				dagql.Arg("toolchains").Doc(`The toolchains to remove.`),
 			),
 
 		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
-			Doc(`Update the blueprint module to the latest version.`),
+			Doc(`Update the blueprint module to the latest version.`).
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead."),
 
 		dagql.Func("withoutBlueprint", s.moduleSourceWithoutBlueprint).
-			Doc(`Remove the current blueprint from the module source.`),
+			Doc(`Remove the current blueprint from the module source.`).
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead."),
 
 		dagql.Func("withExperimentalFeatures", s.moduleSourceWithExperimentalFeatures).
 			Doc(`Enable the experimental features for the module source.`).
@@ -542,10 +548,6 @@ func (s *moduleSourceSchema) localModuleSource(
 			return nil
 		})
 
-		eg.Go(func() error {
-			return s.loadBlueprintModule(ctx, bk, localSrc)
-		})
-
 		localSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(localSrc.ConfigDependencies))
 		for i, depCfg := range localSrc.ConfigDependencies {
 			eg.Go(func() error {
@@ -732,10 +734,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return nil
 	})
 
-	eg.Go(func() error {
-		return s.loadBlueprintModule(ctx, bk, gitSrc)
-	})
-
 	gitSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(gitSrc.ConfigDependencies))
 	for i, depCfg := range gitSrc.ConfigDependencies {
 		eg.Go(func() error {
@@ -802,6 +800,7 @@ func moduleResolveLockPolicy(ref *gitutil.Ref) workspace.LockPolicy {
 	return workspace.PolicyFloat
 }
 
+// TODO loadBlueprintModule can be deleted maybe? since it was renamed in a different commit?
 func (s *moduleSourceSchema) loadBlueprintModule(
 	ctx context.Context,
 	bk *engineutil.Client,
@@ -1339,6 +1338,60 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	return nil
+}
+
+func legacyWorkspaceFieldNames(src *core.ModuleSource) []string {
+	var fields []string
+	if src != nil && src.ConfigBlueprint != nil {
+		fields = append(fields, "blueprint")
+	}
+	if src != nil && len(src.ConfigToolchains) > 0 {
+		fields = append(fields, "toolchains")
+	}
+	return fields
+}
+
+func usesLegacyWorkspaceFields(src *core.ModuleSource) bool {
+	return len(legacyWorkspaceFieldNames(src)) > 0
+}
+
+func stripLegacyWorkspaceFields(src *core.ModuleSource) *core.ModuleSource {
+	if src == nil {
+		return nil
+	}
+	stripped := src.Clone()
+	stripped.ConfigBlueprint = nil
+	stripped.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
+	stripped.ConfigToolchains = nil
+	stripped.Toolchains = nil
+	return stripped
+}
+
+func directLegacyWorkspaceLoadError(src *core.ModuleSource) error {
+	fields := strings.Join(legacyWorkspaceFieldNames(src), ", ")
+	return fmt.Errorf(
+		"cannot load this ref as a module: its dagger.json uses legacy workspace fields %q\n\nload it as a workspace instead, for example with `-W`",
+		fields,
+	)
+}
+
+func nestedLegacyWorkspaceLoadError(src *core.ModuleSource) error {
+	fields := strings.Join(legacyWorkspaceFieldNames(src), ", ")
+	ref := src.AsString()
+	if src.Kind == core.ModuleSourceKindLocal {
+		return fmt.Errorf(
+			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger migrate` in %q, then update this source to point at one of the migrated modules under %q",
+			ref,
+			fields,
+			ref,
+			filepath.Join(ref, workspace.LockDirName, "modules"),
+		)
+	}
+	return fmt.Errorf(
+		"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
+		ref,
+		fields,
+	)
 }
 
 // load (or re-load) the context directory for the given module source
@@ -3345,6 +3398,15 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
 		// also load .env defaults for args not found in WorkspaceConfig.
 		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
+
+		// StripLegacyWorkspaceFields, when true, removes legacy workspace-only
+		// fields from the loaded module source before generic module loading.
+		// Used for the top-level compat main module only.
+		StripLegacyWorkspaceFields bool `internal:"true" default:"false"`
+
+		// WorkspaceModuleLoad indicates this module is being loaded as a module
+		// source from workspace configuration rather than directly.
+		WorkspaceModuleLoad bool `internal:"true" default:"false"`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -3354,6 +3416,20 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	if src.Self().ModuleName == "" {
 		return inst, fmt.Errorf("module name must be set")
+	}
+
+	if usesLegacyWorkspaceFields(src.Self()) {
+		if args.StripLegacyWorkspaceFields {
+			stripped, err := dagql.NewObjectResultForCurrentCall(ctx, dag, stripLegacyWorkspaceFields(src.Self()))
+			if err != nil {
+				return inst, fmt.Errorf("failed to strip legacy workspace fields: %w", err)
+			}
+			src = stripped
+		} else if args.WorkspaceModuleLoad {
+			return inst, nestedLegacyWorkspaceLoadError(src.Self())
+		} else {
+			return inst, directLegacyWorkspaceLoadError(src.Self())
+		}
 	}
 
 	// Check engine version compatibility

@@ -355,6 +355,10 @@ type pendingModule struct {
 	DefaultsFromDotEnv bool
 	ArgCustomizations  []*modules.ModuleConfigArgument
 
+	// Strip legacy blueprint/toolchains fields before generic module loading.
+	// Used only for the top-level compat main module.
+	StripLegacyWorkspaceFields bool
+
 	// For legacy blueprints, the caller module's own .env should still behave
 	// like the "inner" env file even though the code now loads from the
 	// blueprint source tree.
@@ -624,10 +628,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			wsDir := filepath.Join(ws.Root, ws.Path)
 			rel, _ := filepath.Rel(wsDir, moduleDir)
 			pending = append(pending, pendingModule{
-				Kind:       moduleLoadKindAmbient,
-				Ref:        resolveLocalRef(ws, rel),
-				Name:       compatWorkspace.MainModule.Name,
-				Entrypoint: compatWorkspace.MainModule.Entry.Entrypoint,
+				Kind:                       moduleLoadKindAmbient,
+				Ref:                        resolveLocalRef(ws, rel),
+				Name:                       compatWorkspace.MainModule.Name,
+				Entrypoint:                 compatWorkspace.MainModule.Entry.Entrypoint,
+				StripLegacyWorkspaceFields: true,
 			})
 		}
 	}
@@ -1158,6 +1163,16 @@ func (srv *Server) resolveModule(
 		}
 		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
 			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
+		})
+	}
+	if mod.Kind == moduleLoadKindAmbient {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "workspaceModuleLoad", Value: dagql.Boolean(true),
+		})
+	}
+	if mod.StripLegacyWorkspaceFields {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
+			Name: "stripLegacyWorkspaceFields", Value: dagql.Boolean(true),
 		})
 	}
 
