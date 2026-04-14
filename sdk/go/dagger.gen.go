@@ -15686,6 +15686,31 @@ func (r *Workspace) Path(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceRefreshModulesOpts contains options for Workspace.RefreshModules
+type WorkspaceRefreshModulesOpts struct {
+	// Workspace module names to refresh.
+	ModuleNames []string
+}
+
+// Refresh lock entries for selected workspace-config modules.
+//
+// This layers selective workspace refresh on top of the lockfile base.
+//
+// Experimental: Experimental selective workspace lock refresh API.
+func (r *Workspace) RefreshModules(opts ...WorkspaceRefreshModulesOpts) *Changeset {
+	q := r.query.Select("refreshModules")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `moduleNames` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ModuleNames) {
+			q = q.Arg("moduleNames", opts[i].ModuleNames)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // WorkspaceServicesOpts contains options for Workspace.Services
 type WorkspaceServicesOpts struct {
 	// Only include services matching the specified patterns
