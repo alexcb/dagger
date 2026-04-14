@@ -583,18 +583,18 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// (1a) Legacy toolchains (from compat mode, extracted above)
-	for _, tc := range legacyToolchains {
-		pending = append(pending, pendingLegacyModule(
-			ws,
-			resolveConfigRef,
-			tc.Name,
-			tc.Source,
-			tc.Pin,
-			false,
-			tc.ConfigDefaults,
-			tc.Customizations,
-		))
-	}
+	// for _, tc := range legacyToolchains {
+	// 	pending = append(pending, pendingLegacyModule(
+	// 		ws,
+	// 		resolveConfigRef,
+	// 		tc.Name,
+	// 		tc.Source,
+	// 		tc.Pin,
+	// 		false,
+	// 		tc.ConfigDefaults,
+	// 		tc.Customizations,
+	// 	))
+	// }
 
 	legacyBlueprint := legacyWorkspace.Blueprint()
 
