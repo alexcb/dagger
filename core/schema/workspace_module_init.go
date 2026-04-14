@@ -174,11 +174,15 @@ func (s *workspaceSchema) exportWorkspaceModule(
 		); err != nil {
 			return "", fmt.Errorf("load blueprint module: %w", err)
 		}
+		blueprintID, err := blueprint.ID()
+		if err != nil {
+			return "", err
+		}
 		selectors = append(selectors, dagql.Selector{
 			Field: "withBlueprint",
 			Args: []dagql.NamedInput{{
 				Name:  "blueprint",
-				Value: dagql.NewID[*core.ModuleSource](blueprint.ID()),
+				Value: dagql.NewID[*core.ModuleSource](blueprintID),
 			}},
 		})
 	}
