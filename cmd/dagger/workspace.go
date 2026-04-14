@@ -179,7 +179,8 @@ type workspaceModuleInitOptions struct {
 func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, cwd string, opts workspaceModuleInitOptions) error {
 	ws := dag.CurrentWorkspace()
 
-	msg, err := ws.ModuleInit(ctx, opts.Name, opts.SDK, dagger.WorkspaceModuleInitOpts{
+	msg, err := ws.ModuleInit(ctx, opts.Name, dagger.WorkspaceModuleInitOpts{
+		SDK:       opts.SDK,
 		Source:    opts.Source,
 		Include:   opts.Include,
 		Blueprint: opts.Blueprint,
@@ -229,13 +230,22 @@ func writeWorkspaceModuleList(out io.Writer, modules []dagger.WorkspaceModule) e
 		return err
 	}
 
+	ctx := context.TODO() // should be passed in
+
 	tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	if _, err := fmt.Fprintln(tw, "Name\tSource"); err != nil {
 		return err
 	}
 	for _, mod := range modules {
-		name := mod.Name
-		if mod.Blueprint {
+		name, err := mod.Name(ctx)
+		if err != nil {
+			return err
+		}
+		isBlueprint, err := mod.Blueprint(ctx)
+		if err != nil {
+			return err
+		}
+		if isBlueprint {
 			name += "*"
 		}
 		if _, err := fmt.Fprintf(tw, "%s\t%s\n", name, mod.Source); err != nil {
