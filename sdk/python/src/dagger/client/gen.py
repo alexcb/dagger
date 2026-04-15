@@ -11463,7 +11463,17 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     def blueprint(self) -> Self:
-        """The blueprint referenced by the module source."""
+        """The blueprint referenced by the module source.
+
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in .dagger/config.toml instead.
+        """
+        warnings.warn(
+            'Method "blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("blueprint", _args)
         return ModuleSource(_ctx)
@@ -11924,7 +11934,17 @@ class ModuleSource(Type):
         return self.sync().__await__()
 
     async def toolchains(self) -> list["ModuleSource"]:
-        """The toolchains referenced by the module source."""
+        """The toolchains referenced by the module source.
+
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in .dagger/config.toml instead.
+        """
+        warnings.warn(
+            'Method "toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("toolchains", _args)
         return await _ctx.execute_object_list(ModuleSource)
@@ -11959,11 +11979,20 @@ class ModuleSource(Type):
     def with_blueprint(self, blueprint: Self) -> Self:
         """Set a blueprint for the module source.
 
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `.dagger/config.toml` instead.
+
         Parameters
         ----------
         blueprint:
             The blueprint module to set.
         """
+        warnings.warn(
+            'Method "with_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("blueprint", blueprint),
         ]
@@ -12094,11 +12123,20 @@ class ModuleSource(Type):
     def with_toolchains(self, toolchains: list["ModuleSource"]) -> Self:
         """Add toolchains to the module source.
 
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `.dagger/config.toml` instead.
+
         Parameters
         ----------
         toolchains:
             The toolchain modules to add.
         """
+        warnings.warn(
+            'Method "with_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("toolchains", toolchains),
         ]
@@ -12106,7 +12144,17 @@ class ModuleSource(Type):
         return ModuleSource(_ctx)
 
     def with_update_blueprint(self) -> Self:
-        """Update the blueprint module to the latest version."""
+        """Update the blueprint module to the latest version.
+
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `.dagger/config.toml` instead.
+        """
+        warnings.warn(
+            'Method "with_update_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("withUpdateBlueprint", _args)
         return ModuleSource(_ctx)
@@ -12128,11 +12176,20 @@ class ModuleSource(Type):
     def with_update_toolchains(self, toolchains: list[str]) -> Self:
         """Update one or more toolchains.
 
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `.dagger/config.toml` instead.
+
         Parameters
         ----------
         toolchains:
             The toolchains to update.
         """
+        warnings.warn(
+            'Method "with_update_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("toolchains", toolchains),
         ]
@@ -12154,7 +12211,17 @@ class ModuleSource(Type):
         return ModuleSource(_ctx)
 
     def without_blueprint(self) -> Self:
-        """Remove the current blueprint from the module source."""
+        """Remove the current blueprint from the module source.
+
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `.dagger/config.toml` instead.
+        """
+        warnings.warn(
+            'Method "without_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("withoutBlueprint", _args)
         return ModuleSource(_ctx)
@@ -12208,11 +12275,20 @@ class ModuleSource(Type):
     def without_toolchains(self, toolchains: list[str]) -> Self:
         """Remove the provided toolchains from the module source.
 
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `.dagger/config.toml` instead.
+
         Parameters
         ----------
         toolchains:
             The toolchains to remove.
         """
+        warnings.warn(
+            'Method "without_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("toolchains", toolchains),
         ]
