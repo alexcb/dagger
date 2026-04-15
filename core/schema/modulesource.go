@@ -2310,7 +2310,7 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	parentSrc = parentSrc.Clone()
 	parentSrc.ConfigBlueprint = depCfg
 	parentSrc.Blueprint = blueprints[0]
-	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
+	//parentSrc.Digest = parentSrc.CalcDigest(ctx).String() // TODO migrate to egraph
 	return parentSrc, nil
 }
 
@@ -2402,7 +2402,11 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
 				); err != nil {
 					return inst, fmt.Errorf("failed to load updated toolchain %q: %w", cfg.Name, err)
 				}
-				updatedIDs = append(updatedIDs, dagql.NewID[*core.ModuleSource](updated.ID()))
+				updatedID, err := updated.ID()
+				if err != nil {
+					return inst, err
+				}
+				updatedIDs = append(updatedIDs, dagql.NewID[*core.ModuleSource](updatedID))
 				break
 			}
 			return inst, fmt.Errorf("updating local toolchains is not supported")
@@ -2418,7 +2422,11 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
 			); err != nil {
 				return inst, fmt.Errorf("failed to load existing toolchain %q: %w", cfg.Name, err)
 			}
-			updatedIDs = append(updatedIDs, dagql.NewID[*core.ModuleSource](existing.ID()))
+			existingID, err := existing.ID()
+			if err != nil {
+				return inst, err
+			}
+			updatedIDs = append(updatedIDs, dagql.NewID[*core.ModuleSource](existingID))
 		}
 	}
 	if len(updateReqs) > 0 {
@@ -2478,7 +2486,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutToolchains(
 	}
 	parentSrc.ConfigToolchains = filteredConfig
 	parentSrc.Toolchains = filteredToolchains
-	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
+	// parentSrc.Digest = parentSrc.CalcDigest(ctx).String() // TODO migrate to egraph
 	return parentSrc, nil
 }
 

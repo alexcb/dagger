@@ -1149,13 +1149,13 @@ func (srv *Server) resolveModule(
 	if src.Self().UsesLegacyWorkspaceFields() {
 		switch mod.legacyFieldPolicy {
 		case legacyWorkspaceFieldPolicyStripCompatMain:
-			stripped, err := dagql.NewObjectResultForID(src.Self().StripLegacyWorkspaceFields(), dag, src.ID())
+			stripped, err := dagql.NewObjectResultForCurrentCall(ctx, dag, src.Self().StripLegacyWorkspaceFields())
 			if err != nil {
-				return nil, fmt.Errorf("failed to strip legacy workspace fields from %q: %w", mod.Ref, err)
+				return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("failed to strip legacy workspace fields from %q: %w", mod.Ref, err)
 			}
 			src = stripped
 		case legacyWorkspaceFieldPolicyRejectAsWorkspace:
-			return nil, src.Self().NestedLegacyWorkspaceLoadError()
+			return dagql.ObjectResult[*core.Module]{}, src.Self().NestedLegacyWorkspaceLoadError()
 		}
 	}
 

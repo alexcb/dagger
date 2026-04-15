@@ -236,10 +236,6 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, fmt.Errorf("migration remove legacy config: %w", err)
 	}
 
-	baseDirID, err := baseDir.ID()
-	if err != nil {
-		return nil, err
-	}
 	var changes *core.Changeset
 	if err := func() (rerr error) {
 		diffCtx, span := core.Tracer(ctx).Start(ctx, "compute migration changeset")
@@ -305,11 +301,15 @@ func workspaceMigrationChanges(
 		return nil, err
 	}
 
+	beforeID, err := before.ID()
+	if err != nil {
+		return nil, err
+	}
 	var changes dagql.ObjectResult[*core.Changeset]
 	if err := srv.Select(ctx, after, &changes, dagql.Selector{
 		Field: "changes",
 		Args: []dagql.NamedInput{
-			{Name: "from", Value: dagql.NewID[*core.Directory](before.ID())},
+			{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)},
 		},
 	}); err != nil {
 		return nil, err
