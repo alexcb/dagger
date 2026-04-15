@@ -123,7 +123,7 @@ type ParsedGitRefString struct {
 	modPath string
 
 	ModVersion string
-	hasVersion bool
+	HasVersion bool
 
 	RepoRoot       *vcs.RepoRoot
 	RepoRootSubdir string
@@ -133,7 +133,7 @@ type ParsedGitRefString struct {
 	sourceUser     string
 	cloneUser      string
 	SourceCloneRef string // original user-provided username
-	cloneRef       string // resolved username
+	CloneRef       string // resolved username
 }
 
 type gitEndpointError struct{ error }
@@ -171,7 +171,7 @@ func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefStr
 	if len(parts) == 2 {
 		gitParsed.modPath = endpoint.Host + parts[0]
 		gitParsed.ModVersion = parts[1]
-		gitParsed.hasVersion = true
+		gitParsed.HasVersion = true
 	}
 
 	// Try to isolate the root of the git repo
@@ -227,7 +227,7 @@ func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefStr
 	}
 
 	gitParsed.SourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + repoRootWithPort
-	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + repoRootWithPort
+	gitParsed.CloneRef = gitParsed.scheme.Prefix() + cloneUser + repoRootWithPort
 
 	return gitParsed, nil
 }
@@ -268,13 +268,13 @@ func (p *ParsedGitRefString) GitRef(
 	}
 
 	var modTag string
-	if p.hasVersion && semver.IsValid(p.ModVersion) {
+	if p.HasVersion && semver.IsValid(p.ModVersion) {
 		var tags dagql.Array[dagql.String]
 		err := dag.Select(ctx, dag.Root(), &tags,
 			dagql.Selector{
 				Field: "git",
 				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(p.cloneRef)},
+					{Name: "url", Value: dagql.String(p.CloneRef)},
 				},
 			},
 			dagql.Selector{
@@ -300,7 +300,7 @@ func (p *ParsedGitRefString) GitRef(
 	repoSelector := dagql.Selector{
 		Field: "git",
 		Args: []dagql.NamedInput{
-			{Name: "url", Value: dagql.String(p.cloneRef)},
+			{Name: "url", Value: dagql.String(p.CloneRef)},
 		},
 	}
 	repoSelector = withCommitArg(repoSelector)
@@ -314,7 +314,7 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(modTag)},
 			},
 		})
-	case p.hasVersion:
+	case p.HasVersion:
 		refSelector = withCommitArg(dagql.Selector{
 			Field: "ref",
 			Args: []dagql.NamedInput{

@@ -311,7 +311,7 @@ func TestParseRefString(t *testing.T) {
 					RepoRoot:       &vcs.RepoRoot{Root: "github.com:shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 					scheme:         SchemeSCPLike,
 					RepoRootSubdir: "ci",
-					hasVersion:     true,
+					HasVersion:     true,
 					ModVersion:     "version",
 				},
 			},
@@ -325,7 +325,7 @@ func TestParseRefString(t *testing.T) {
 					RepoRoot:       &vcs.RepoRoot{Root: "github.com:shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 					scheme:         SchemeSCPLike,
 					RepoRootSubdir: "ci",
-					hasVersion:     true,
+					HasVersion:     true,
 					ModVersion:     "version",
 				},
 			},
@@ -369,7 +369,7 @@ func TestParseRefString(t *testing.T) {
 					scheme:         SchemeSSH,
 					RepoRootSubdir: "git-codereview",
 					sourceUser:     "someuser",
-					cloneRef:       "ssh://someuser@golang.org:29418/x/review",
+					CloneRef:       "ssh://someuser@golang.org:29418/x/review",
 					SourceCloneRef: "ssh://someuser@golang.org:29418/x/review",
 				},
 			},
@@ -405,8 +405,8 @@ func TestParseRefString(t *testing.T) {
 				require.Equal(t, tc.want.Git.SourceCloneRef, parsed.Git.SourceCloneRef)
 			}
 
-			if tc.want.Git.cloneRef != "" {
-				require.Equal(t, tc.want.Git.cloneRef, parsed.Git.cloneRef)
+			if tc.want.Git.CloneRef != "" {
+				require.Equal(t, tc.want.Git.CloneRef, parsed.Git.CloneRef)
 			}
 		})
 	}

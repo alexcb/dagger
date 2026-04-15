@@ -12,7 +12,9 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/distribution/reference"
+	"golang.org/x/mod/semver"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -406,4 +408,94 @@ func lookupRefreshContext(ctx context.Context) context.Context {
 	refreshed := *clientMetadata
 	refreshed.LockMode = string(workspace.LockModeDisabled)
 	return engine.ContextWithClientMetadata(ctx, &refreshed)
+}
+
+func resolveParsedGitRefCommit(ctx context.Context, parsed *core.ParsedGitRefString, pinCommitRef string) (string, error) {
+	remote, err := loadRemoteGitMetadata(ctx, parsed.CloneRef)
+	if err != nil {
+		return "", err
+	}
+
+	ref, err := resolveParsedGitRef(remote, parsed, pinCommitRef)
+	if err != nil {
+		return "", err
+	}
+	return ref.SHA, nil
+}
+
+func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remote, error) {
+	gitURL, err := gitutil.ParseURL(remoteURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse git URL %q: %w", remoteURL, err)
+	}
+
+	repo := &core.RemoteGitRepository{URL: gitURL}
+	remote, err := repo.Remote(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load git remote %q: %w", remoteURL, err)
+	}
+	return remote, nil
+}
+
+func resolveParsedGitRef(remote *gitutil.Remote, parsed *core.ParsedGitRefString, pinCommitRef string) (*gitutil.Ref, error) {
+	if gitutil.IsCommitSHA(pinCommitRef) {
+		return &gitutil.Ref{SHA: pinCommitRef}, nil
+	}
+
+	target := "HEAD"
+	switch {
+	case parsed.HasVersion && semver.IsValid(parsed.ModVersion):
+		matched, err := matchVersion(remote.Tags().ShortNames(), parsed.ModVersion, parsed.RepoRootSubdir)
+		if err != nil {
+			return nil, fmt.Errorf("matching version to tags: %w", err)
+		}
+		target = matched
+	case parsed.HasVersion:
+		target = parsed.ModVersion
+	case pinCommitRef != "":
+		target = pinCommitRef
+	}
+
+	ref, err := remote.Lookup(target)
+	if err != nil {
+		return nil, fmt.Errorf("resolve git ref %q: %w", target, err)
+	}
+	return ref, nil
+}
+
+func resolveGitRefCommit(ctx context.Context, remoteURL, field, name string) (string, error) {
+	remote, err := loadRemoteGitMetadata(ctx, remoteURL)
+	if err != nil {
+		return "", err
+	}
+
+	target := "HEAD"
+	switch field {
+	case "head":
+	case "ref", "branch", "tag":
+		target = name
+	default:
+		return "", fmt.Errorf("unsupported git lock field %q", field)
+	}
+
+	ref, err := remote.Lookup(target)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s %q for %q: %w", field, name, remoteURL, err)
+	}
+	return ref.SHA, nil
+}
+
+func parseGitLookupInputs(operation string, inputs []any) (string, string, error) {
+	if len(inputs) != 2 {
+		return "", "", fmt.Errorf("invalid %s inputs %v", operation, inputs)
+	}
+	remoteURL, ok := inputs[0].(string)
+	if !ok || remoteURL == "" {
+		return "", "", fmt.Errorf("invalid %s remote %v", operation, inputs[0])
+	}
+	name, ok := inputs[1].(string)
+	if !ok || name == "" {
+		return "", "", fmt.Errorf("invalid %s name %v", operation, inputs[1])
+	}
+	return remoteURL, name, nil
 }

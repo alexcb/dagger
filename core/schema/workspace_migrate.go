@@ -384,9 +384,13 @@ func workspaceMigrationPruneSourceRoot(
 	if err != nil {
 		return dir, fmt.Errorf("load migrated module directory: %w", err)
 	}
+	migratedModuleID, err := migratedModuleDir.ID()
+	if err != nil {
+		return dir, err
+	}
 	prunedSourceDir, err = workspaceMigrationSelectDirectory(ctx, prunedSourceDir, "withDirectory", []dagql.NamedInput{
 		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(moduleRelPath)))},
-		{Name: "source", Value: dagql.NewID[*core.Directory](migratedModuleDir.ID())},
+		{Name: "source", Value: dagql.NewID[*core.Directory](migratedModuleID)},
 	})
 	if err != nil {
 		return dir, fmt.Errorf("preserve migrated module directory: %w", err)
@@ -416,9 +420,13 @@ func workspaceMigrationPruneSourceRoot(
 	if err != nil {
 		return dir, err
 	}
+	prunedSrcID, err := prunedSourceDir.ID()
+	if err != nil {
+		return dir, err
+	}
 	updated, err = workspaceMigrationSelectDirectory(ctx, updated, "withDirectory", []dagql.NamedInput{
 		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(plan.SourceCopyPath)))},
-		{Name: "source", Value: dagql.NewID[*core.Directory](prunedSourceDir.ID())},
+		{Name: "source", Value: dagql.NewID[*core.Directory](prunedSrcID)},
 	})
 	if err != nil {
 		return dir, err
