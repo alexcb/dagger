@@ -712,7 +712,7 @@ func (svc *Service) startContainer(
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
 			InsecureRootCapabilities:      svc.InsecureRootCapabilities,
 			NoInit:                        svc.NoInit,
-		})
+		}, false)
 		if err != nil {
 			return err
 		}
@@ -793,6 +793,11 @@ func (svc *Service) startContainer(
 	if opts.IO != nil && opts.IO.Stderr != nil {
 		stderrWriters = append(stderrWriters, opts.IO.Stderr)
 	}
+
+	// ACB force output here (dont merge)
+	acbStdout, acbStderr := newDumpFilePair(fmt.Sprintf("%s-%v", svc.CustomHostname, svc.Args))
+	stdoutWriters = append(stdoutWriters, acbStdout)
+	stderrWriters = append(stderrWriters, acbStderr)
 
 	started := make(chan struct{})
 

@@ -80,6 +80,7 @@ func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, with
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
+			"--debug",
 			// avoid network conflicts with other tests
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
