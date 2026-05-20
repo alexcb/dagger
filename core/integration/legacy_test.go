@@ -1054,8 +1054,12 @@ func fetch() (string, error) {
 
 	// verify that the engine uses the entrypoint when serving the legacy AsService api
 	t.Run("use entrypoint by default", func(ctx context.Context, t *testctx.T) {
+		o, err := ctr.WithExec([]string{"sh", "-c", "ls -la && cat dagger.json"}).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "weee", o)
+
 		output, err := ctr.
-			With(daggerExec("call", "test-service-binding-entrypoint", "--app=app")).
+			With(daggerExec("call", "test-service-binding-entrypoint", "--app=app")). // FIXME this be failing with a dagger call, can't find it.
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)

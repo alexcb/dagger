@@ -595,14 +595,10 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if err != nil {
 		return err
 	}
-	if ws == nil {
-		client.workspace = nil
-		client.pendingModules = nil
-		return nil
-	}
 
 	var wsConfig *workspace.Config
-	if ws.ConfigFile != "" {
+
+	if ws != nil {
 		wsConfig, err = loadWorkspaceConfig(ctx, readFile, ws)
 		if err != nil {
 			return err
@@ -624,11 +620,16 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 	legacyCallerDir := legacyCallerModuleDir(isLocal, moduleDir)
-	if wsConfig == nil && hasModuleConfig {
+	if hasModuleConfig && (ws == nil || ws.ConfigFile == "") {
+		// read legacy dagger.json
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
 			compatWorkspace, _ = workspace.ParseRuntimeCompatWorkspaceAt(data, cfgPath)
 		}
+		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
+			compatWorkspace, _ = workspace.ParseRuntimeCompatWorkspaceAt(data, cfgPath)
+		}
+
 		if compatWorkspace != nil {
 			if clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning {
 				msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
@@ -636,8 +637,22 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				slog.Warn(msg,
 					"config", cfgPath)
 			}
+			if ws == nil {
+				ws, err = workspace.DetectInRoot(ctx, pathExists, cwd, moduleDir)
+				if err != nil {
+					return err
+				}
+			}
 		}
-	} else if wsConfig == nil {
+		//} else if wsConfig == nil {
+	}
+
+	if ws == nil {
+		client.workspace = nil
+		client.pendingModules = nil
+		return nil
+	}
+	if compatWorkspace == nil && wsConfig == nil {
 		slog.Info("No workspace modules detected.", "path", ws.Root)
 	}
 
