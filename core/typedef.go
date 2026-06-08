@@ -512,6 +512,7 @@ type FunctionArg struct {
 	DefaultPath    string   `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory" doNotCache:"simple field selection"`
 	DefaultAddress string   `field:"true" doc:"Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)" doNotCache:"simple field selection"`
 	Ignore         []string `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner." doNotCache:"simple field selection"`
+	Include        []string `field:"true" doc:"Only applies to arguments of type Directory. The include patterns are applied to the input directory, and only matching entries are included, in a cache-efficient manner." doNotCache:"simple field selection"`
 	Deprecated     *string  `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	// Below are not in public API
@@ -629,6 +630,24 @@ func (arg *FunctionArg) WithIgnore(ignore []string) *FunctionArg {
 	}
 	arg = arg.Clone()
 	arg.Ignore = append([]string(nil), ignore...)
+	return arg
+}
+
+func (arg *FunctionArg) WithInclude(include []string) *FunctionArg {
+	if len(arg.Include) == len(include) {
+		same := true
+		for i := range include {
+			if arg.Include[i] != include[i] {
+				same = false
+				break
+			}
+		}
+		if same {
+			return arg
+		}
+	}
+	arg = arg.Clone()
+	arg.Include = append([]string(nil), include...)
 	return arg
 }
 

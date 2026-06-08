@@ -131,6 +131,19 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		},
 	},
 	{
+		Name:        "includePatterns",
+		Description: dagql.FormatDescription(`Filter directory contents using .gitignore-style glob patterns.`),
+		Args: dagql.NewInputSpecs(
+			dagql.InputSpec{
+				Name: "patterns",
+				Type: dagql.ArrayInput[dagql.String](nil),
+			},
+		),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
 		Name:        "check",
 		Description: dagql.FormatDescription(`Indicates that this function is a check.`),
 		Args:        dagql.NewInputSpecs(),
@@ -427,6 +440,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("defaultValue").Doc(`A default value to use for this argument if not explicitly set by the caller, if any`),
 				dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
 				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
+				dagql.Arg("include").Doc(`Only include files matching these patterns.`),
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
 				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
 			),
@@ -457,6 +471,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("__withDefaultPath", s.functionArgWithDefaultPath),
 		dagql.Func("__withDefaultAddress", s.functionArgWithDefaultAddress),
 		dagql.Func("__withIgnore", s.functionArgWithIgnore),
+		dagql.Func("__withInclude", s.functionArgWithInclude),
 	}.Install(dag)
 
 	dagql.Fields[*core.FunctionArg]{
@@ -1535,6 +1550,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	DefaultPath    string    `default:""`
 	DefaultAddress string    `default:""`
 	Ignore         []string  `default:"[]"`
+	Include        []string  `default:"[]"`
 	SourceMap      dagql.Optional[core.SourceMapID]
 	Deprecated     *string
 }) (*core.Function, error) {
@@ -1605,6 +1621,17 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		}
 	}
 
+	// Check if Include is set for non-directory type
+	if len(args.Include) > 0 {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set include for Object type, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Self().Name
+		if name != "Directory" {
+			return nil, fmt.Errorf("can only set include for Directory type, not %s", name)
+		}
+	}
+
 	// When using a default path or address, SDKs can't set a default value and the argument
 	// may be non-nullable, so we need to enforce it as optional.
 	var arg dagql.ObjectResult[*core.FunctionArg]
@@ -1618,6 +1645,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 			{Name: "defaultPath", Value: dagql.String(args.DefaultPath)},
 			{Name: "defaultAddress", Value: dagql.String(args.DefaultAddress)},
 			{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Ignore...))},
+			{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Include...))},
 			{Name: "sourceMap", Value: optID(sourceMap)},
 			{Name: "deprecated", Value: optString(args.Deprecated)},
 		},
@@ -1726,6 +1754,12 @@ func (s *moduleSchema) functionArgWithIgnore(ctx context.Context, arg *core.Func
 	Ignore []string `default:"[]"`
 }) (*core.FunctionArg, error) {
 	return arg.WithIgnore(args.Ignore), nil
+}
+
+func (s *moduleSchema) functionArgWithInclude(ctx context.Context, arg *core.FunctionArg, args struct {
+	Include []string `default:"[]"`
+}) (*core.FunctionArg, error) {
+	return arg.WithInclude(args.Include), nil
 }
 
 func (s *moduleSchema) functionWithCachePolicy(
@@ -2490,6 +2524,7 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 				defaultPath    string
 				defaultAddress string
 				ignore         []string
+				include        []string
 				resolvedSpec   dagql.InputSpec
 			)
 			if fieldSpec, ok := queryObjType.FieldSpec(introspectionField.Name, dag.View); ok {
@@ -2513,6 +2548,14 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 									}
 								}
 							}
+						case "includePatterns":
+							if arg := directive.Arguments.ForName("patterns"); arg != nil && arg.Value != nil && arg.Value.Kind == ast.ListValue {
+								for _, child := range arg.Value.Children {
+									if child != nil && child.Value != nil {
+										include = append(include, child.Value.Raw)
+									}
+								}
+							}
 						}
 					}
 				}
@@ -2532,6 +2575,7 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 					{Name: "defaultPath", Value: dagql.String(defaultPath)},
 					{Name: "defaultAddress", Value: dagql.String(defaultAddress)},
 					{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...))},
 					{Name: "deprecated", Value: core.OptString(introspectionArg.DeprecationReason)},
 				},
 			}); err != nil {
