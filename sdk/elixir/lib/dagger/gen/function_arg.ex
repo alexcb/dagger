@@ -95,6 +95,17 @@ defmodule Dagger.FunctionArg do
   end
 
   @doc """
+  Only applies to arguments of type Directory. The include patterns are applied to the input directory, and only matching entries are included, in a cache-efficient manner.
+  """
+  @spec include(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def include(%__MODULE__{} = function_arg) do
+    query_builder =
+      function_arg.query_builder |> QB.select("include")
+
+    Client.execute(function_arg.client, query_builder)
+  end
+
+  @doc """
   The name of the argument in lowerCamelCase format.
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}

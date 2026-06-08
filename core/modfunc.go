@@ -168,6 +168,10 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 			}
 		}
 
+		if len(arg.metadata.Include) > 0 && !arg.metadata.isContextual() { // contextual args already have include applied
+			fmt.Printf("ACB here with %v\n", arg.metadata.Include)
+		}
+
 		encoded, err := json.Marshal(converted)
 		if err != nil {
 			return nil, fmt.Errorf("marshal arg %q: %w", input.Name, err)
@@ -1054,8 +1058,10 @@ func (fn *ModuleFunction) loadContextualArg(
 
 	switch arg.TypeDef.Self().AsObject.Value.Self().Name {
 	case "Directory":
+		fmt.Printf("ACB loadContextualArg with defaultPath=%s ignore=%v include=%v\n", arg.DefaultPath, arg.Ignore, arg.Include)
 		dir, err := fn.mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
 			Exclude: arg.Ignore,
+			Include: arg.Include,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("load contextual directory %q: %w", arg.DefaultPath, err)
@@ -1202,6 +1208,7 @@ func (fn *ModuleFunction) loadLegacyDefaultPathArg(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(arg.DefaultPath)},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Include...))},
 				},
 			},
 		)

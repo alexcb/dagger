@@ -45,6 +45,9 @@ directive @generate on FIELD_DEFINITION
 """Filter directory contents using .gitignore-style glob patterns."""
 directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 
+"""Filter directory contents using .gitignore-style glob patterns."""
+directive @includePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
+
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
@@ -3499,6 +3502,9 @@ type Function implements Node {
     """Patterns to ignore when loading the contextual argument value."""
     ignore: [String!] = []
 
+    """Only include files matching these patterns."""
+    include: [String!] = []
+
     """The source map for the argument definition."""
     sourceMap: ID @expectedType(name: "SourceMap")
 
@@ -3587,6 +3593,13 @@ type FunctionArg implements Node {
   cache-efficient manner.
   """
   ignore: [String!]!
+
+  """
+  Only applies to arguments of type Directory. The include patterns are applied
+  to the input directory, and only matching entries are included, in a
+  cache-efficient manner.
+  """
+  include: [String!]!
 
   """The name of the argument in lowerCamelCase format."""
   name: String!

@@ -103,6 +103,7 @@ func cloneCustomizations(customizations []*modules.ModuleConfigArgument) []*modu
 			DefaultPath:    cust.DefaultPath,
 			DefaultAddress: cust.DefaultAddress,
 			Ignore:         append([]string(nil), cust.Ignore...),
+			Include:        append([]string(nil), cust.Include...),
 		})
 	}
 	if len(result) == 0 {

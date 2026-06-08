@@ -8535,6 +8535,7 @@ class Function(Type):
         default_value: JSON | None = None,
         default_path: str | None = "",
         ignore: list[str] | None = None,
+        include: list[str] | None = None,
         source_map: "SourceMap | None" = None,
         deprecated: str | None = None,
         default_address: str | None = "",
@@ -8557,6 +8558,8 @@ class Function(Type):
             from context directory, relative to root directory.
         ignore:
             Patterns to ignore when loading the contextual argument value.
+        include:
+            Only include files matching these patterns.
         source_map:
             The source map for the argument definition.
         deprecated:
@@ -8570,6 +8573,7 @@ class Function(Type):
             Arg("defaultValue", default_value, None),
             Arg("defaultPath", default_path, ""),
             Arg("ignore", [] if ignore is None else ignore, []),
+            Arg("include", [] if include is None else include, []),
             Arg("sourceMap", source_map, None),
             Arg("deprecated", deprecated, None),
             Arg("defaultAddress", default_address, ""),
@@ -8831,6 +8835,29 @@ class FunctionArg(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("ignore", _args)
+        return await _ctx.execute(list[str])
+
+    async def include(self) -> list[str]:
+        """Only applies to arguments of type Directory. The include patterns are
+        applied to the input directory, and only matching entries are
+        included, in a cache-efficient manner.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("include", _args)
         return await _ctx.execute(list[str])
 
     async def name(self) -> str:

@@ -459,7 +459,7 @@ func (fn *Function) LookupArg(nameAnyCase string) (dagql.ObjectResult[*FunctionA
 	return dagql.ObjectResult[*FunctionArg]{}, false
 }
 
-func NewFunctionArg(name string, typeDef dagql.ObjectResult[*TypeDef], desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore []string, deprecated *string) *FunctionArg {
+func NewFunctionArg(name string, typeDef dagql.ObjectResult[*TypeDef], desc string, defaultValue JSON, defaultPath string, defaultAddress string, ignore, include []string, deprecated *string) *FunctionArg {
 	return &FunctionArg{
 		Name:           strcase.ToLowerCamel(name),
 		Description:    desc,
@@ -468,6 +468,7 @@ func NewFunctionArg(name string, typeDef dagql.ObjectResult[*TypeDef], desc stri
 		DefaultPath:    defaultPath,
 		DefaultAddress: defaultAddress,
 		Ignore:         ignore,
+		Include:        include,
 		Deprecated:     deprecated,
 		OriginalName:   name,
 	}
@@ -634,6 +635,7 @@ func (arg *FunctionArg) WithIgnore(ignore []string) *FunctionArg {
 }
 
 func (arg *FunctionArg) WithInclude(include []string) *FunctionArg {
+	fmt.Printf("ACB WithInclude %v called\n", include)
 	if len(arg.Include) == len(include) {
 		same := true
 		for i := range include {
@@ -743,6 +745,29 @@ func (arg FunctionArg) Directives() []*ast.Directive {
 		}
 		directives = append(directives, &ast.Directive{
 			Name: "ignorePatterns",
+			Arguments: ast.ArgumentList{
+				&ast.Argument{
+					Name: "patterns",
+					Value: &ast.Value{
+						Kind:     ast.ListValue,
+						Children: children,
+					},
+				},
+			},
+		})
+	}
+	if len(arg.Include) > 0 {
+		var children ast.ChildValueList
+		for _, include := range arg.Include {
+			children = append(children, &ast.ChildValue{
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  include,
+				},
+			})
+		}
+		directives = append(directives, &ast.Directive{
+			Name: "includePatterns",
 			Arguments: ast.ArgumentList{
 				&ast.Argument{
 					Name: "patterns",
@@ -2652,6 +2677,7 @@ type persistedFunctionArg struct {
 	DefaultPath       string   `json:"defaultPath,omitempty"`
 	DefaultAddress    string   `json:"defaultAddress,omitempty"`
 	Ignore            []string `json:"ignore,omitempty"`
+	Include           []string `json:"include,omitempty"`
 	Deprecated        *string  `json:"deprecated,omitempty"`
 	OriginalName      string   `json:"originalName,omitempty"`
 }
@@ -2785,6 +2811,7 @@ func encodePersistedFunctionArg(cache dagql.PersistedObjectCache, arg *FunctionA
 		DefaultPath:    arg.DefaultPath,
 		DefaultAddress: arg.DefaultAddress,
 		Ignore:         append([]string(nil), arg.Ignore...),
+		Include:        append([]string(nil), arg.Include...),
 		Deprecated:     arg.Deprecated,
 		OriginalName:   arg.OriginalName,
 	}
@@ -2819,6 +2846,7 @@ func decodePersistedFunctionArg(ctx context.Context, dag *dagql.Server, arg *per
 		DefaultPath:    arg.DefaultPath,
 		DefaultAddress: arg.DefaultAddress,
 		Ignore:         append([]string(nil), arg.Ignore...),
+		Include:        append([]string(nil), arg.Include...),
 		Deprecated:     arg.Deprecated,
 		OriginalName:   arg.OriginalName,
 	}

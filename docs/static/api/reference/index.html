@@ -8261,6 +8261,10 @@
                                 <p>Patterns to ignore when loading the contextual argument value.</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include files matching these patterns.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID</code></a></span></h6>
                                 <p>The source map for the argument definition.</p>
                               </div>
@@ -8414,6 +8418,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-ignore" href="#FunctionArg-ignore"><code>ignore</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
                         <td> Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-include" href="#FunctionArg-include"><code>include</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Only applies to arguments of type Directory. The include patterns are applied to the input directory, and only matching entries are included, in a cache-efficient manner. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-name" href="#FunctionArg-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>

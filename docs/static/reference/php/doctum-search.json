@@ -4772,6 +4772,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\FunctionArg::include",
+			"p": "Dagger/FunctionArg.html#method_include",
+			"d": "<p>Only applies to arguments of type Directory. The include patterns are applied to the input directory, and only matching entries are included, in a cache-efficient manner.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\FunctionArg::name",
 			"p": "Dagger/FunctionArg.html#method_name",
 			"d": "<p>The name of the argument in lowerCamelCase format.</p>"

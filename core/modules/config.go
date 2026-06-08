@@ -245,6 +245,9 @@ type ModuleConfigArgument struct {
 
 	// Ignore patterns for Directory arguments.
 	Ignore []string `json:"ignore,omitempty"`
+
+	// Include patterns for Directory arguments.
+	Include []string `json:"include,omitempty"`
 }
 
 func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {

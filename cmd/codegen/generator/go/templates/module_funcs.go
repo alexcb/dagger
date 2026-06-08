@@ -282,6 +282,10 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 			argOpts.Ignore = argSpec.ignore
 		}
 
+		if len(argSpec.include) > 0 {
+			argOpts.Include = argSpec.include
+		}
+
 		fnTypeDef = fnTypeDef.WithArg(argSpec.name, argTypeDef, argOpts)
 	}
 
@@ -450,6 +454,14 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		}
 	}
 
+	include := []string{}
+	if v, ok := pragmas["include"]; ok {
+		err := mapstructure.Decode(v, &include)
+		if err != nil {
+			return paramSpec{}, fmt.Errorf("include pragma %q, must be a valid JSON array: %w", v, err)
+		}
+	}
+
 	// ignore ctx arg for parsing type reference
 	isContext := paramType.String() == contextTypename
 	var typeSpec ParsedType
@@ -486,6 +498,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		defaultAddress:  defaultAddress,
 		deprecated:      deprecated,
 		ignore:          ignore,
+		include:         include,
 	}, nil
 }
 
@@ -528,6 +541,11 @@ type paramSpec struct {
 	// The ignore patterns are applied to the input directory, and
 	// matching entries are filtered out, in a cache-efficient manner.
 	ignore []string
+
+	// Only applies to arguments of type Directory.
+	// The include patterns are applied to the input directory, and
+	// matching entries are filtered out, in a cache-efficient manner.
+	include []string
 }
 
 func (spec paramSpec) isOptional() bool {

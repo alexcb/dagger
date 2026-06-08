@@ -1673,6 +1673,11 @@ export type FunctionWithArgOpts = {
   ignore?: string[]
 
   /**
+   * Only include files matching these patterns.
+   */
+  include?: string[]
+
+  /**
    * The source map for the argument definition.
    */
   sourceMap?: SourceMap
@@ -8814,6 +8819,7 @@ export class Function_ extends BaseClient {
    * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
    * @param opts.defaultPath If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
    * @param opts.ignore Patterns to ignore when loading the contextual argument value.
+   * @param opts.include Only include files matching these patterns.
    * @param opts.sourceMap The source map for the argument definition.
    * @param opts.deprecated If deprecated, the reason or migration path.
    */
@@ -9041,6 +9047,17 @@ export class FunctionArg extends BaseClient {
    */
   ignore = async (): Promise<string[]> => {
     const ctx = this._ctx.select("ignore")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Only applies to arguments of type Directory. The include patterns are applied to the input directory, and only matching entries are included, in a cache-efficient manner.
+   */
+  include = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("include")
 
     const response: Awaited<string[]> = await ctx.execute()
 

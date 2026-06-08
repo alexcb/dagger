@@ -97,6 +97,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
         ?Json $defaultValue = null,
         ?string $defaultPath = '',
         ?array $ignore = [],
+        ?array $include = [],
         ?SourceMap $sourceMap = null,
         ?string $deprecated = null,
         ?string $defaultAddress = '',
@@ -115,6 +116,9 @@ class Function_ extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $ignore) {
         $innerQueryBuilder->setArgument('ignore', $ignore);
+        }
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
         }
         if (null !== $sourceMap) {
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);

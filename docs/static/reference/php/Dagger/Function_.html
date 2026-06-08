@@ -226,7 +226,7 @@
                     <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withArg">withArg</a>(string $name, <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = [], <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null, string|null $defaultAddress = &#039;&#039;)
+                    <a href="#method_withArg">withArg</a>(string $name, <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = [], array|null $include = [], <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null, string|null $defaultAddress = &#039;&#039;)
         
                                             <p><p>Returns the function with the provided argument</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -656,7 +656,7 @@
                     <h3 id="method_withArg">
         <div class="location">at line 93</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
-    <strong>withArg</strong>(string $name, <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = [], <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null, string|null $defaultAddress = &#039;&#039;)
+    <strong>withArg</strong>(string $name, <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = [], array|null $include = [], <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null, string|null $defaultAddress = &#039;&#039;)
         </code>
     </h3>
     <div class="details">    
@@ -701,6 +701,11 @@
                 <td></td>
             </tr>
                     <tr>
+                <td>array|null</td>
+                <td>$include</td>
+                <td></td>
+            </tr>
+                    <tr>
                 <td><abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null</td>
                 <td>$sourceMap</td>
                 <td></td>
@@ -736,7 +741,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withCachePolicy">
-        <div class="location">at line 134</div>
+        <div class="location">at line 138</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withCachePolicy</strong>(<abbr title="Dagger\FunctionCachePolicy">FunctionCachePolicy</abbr> $policy, string|null $timeToLive = null)
         </code>
@@ -783,7 +788,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withCheck">
-        <div class="location">at line 147</div>
+        <div class="location">at line 151</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withCheck</strong>()
         </code>
@@ -815,7 +820,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDeprecated">
-        <div class="location">at line 156</div>
+        <div class="location">at line 160</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withDeprecated</strong>(string|null $reason = null)
         </code>
@@ -857,7 +862,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDescription">
-        <div class="location">at line 168</div>
+        <div class="location">at line 172</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withDescription</strong>(string $description)
         </code>
@@ -899,7 +904,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withGenerator">
-        <div class="location">at line 178</div>
+        <div class="location">at line 182</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withGenerator</strong>()
         </code>
@@ -931,7 +936,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSourceMap">
-        <div class="location">at line 187</div>
+        <div class="location">at line 191</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withSourceMap</strong>(<a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a> $sourceMap)
         </code>
@@ -973,7 +978,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withUp">
-        <div class="location">at line 197</div>
+        <div class="location">at line 201</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withUp</strong>()
         </code>

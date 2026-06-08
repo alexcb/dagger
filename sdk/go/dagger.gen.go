@@ -8107,6 +8107,8 @@ type FunctionWithArgOpts struct {
 	DefaultPath string
 	// Patterns to ignore when loading the contextual argument value.
 	Ignore []string
+	// Only include files matching these patterns.
+	Include []string
 	// The source map for the argument definition.
 	SourceMap *SourceMap
 	// If deprecated, the reason or migration path.
@@ -8135,6 +8137,10 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		// `ignore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ignore) {
 			q = q.Arg("ignore", opts[i].Ignore)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
 		}
 		// `sourceMap` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
@@ -8385,6 +8391,16 @@ func (r *FunctionArg) MarshalJSON() ([]byte, error) {
 // Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
 func (r *FunctionArg) Ignore(ctx context.Context) ([]string, error) {
 	q := r.query.Select("ignore")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Only applies to arguments of type Directory. The include patterns are applied to the input directory, and only matching entries are included, in a cache-efficient manner.
+func (r *FunctionArg) Include(ctx context.Context) ([]string, error) {
+	q := r.query.Select("include")
 
 	var response []string
 

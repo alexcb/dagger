@@ -677,6 +677,7 @@ func (s *moduleSchema) functionArg(ctx context.Context, _ *core.Query, args stru
 	DefaultPath    string    `default:""`
 	DefaultAddress string    `default:""`
 	Ignore         []string  `default:"[]"`
+	Include        []string  `default:"[]"`
 	SourceMap      dagql.Optional[core.SourceMapID]
 	Deprecated     *string
 }) (*core.FunctionArg, error) {
@@ -694,7 +695,7 @@ func (s *moduleSchema) functionArg(ctx context.Context, _ *core.Query, args stru
 			return nil, fmt.Errorf("failed to optionalize arg type: %w", err)
 		}
 	}
-	arg := core.NewFunctionArg(args.Name, typeDef, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, args.Deprecated)
+	arg := core.NewFunctionArg(args.Name, typeDef, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultAddress, args.Ignore, args.Include, args.Deprecated)
 	if arg.IsWorkspace() {
 		typeDef, err = s.withOptional(ctx, dag, arg.TypeDef)
 		if err != nil {

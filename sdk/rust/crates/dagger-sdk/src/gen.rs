@@ -8966,6 +8966,9 @@ pub struct FunctionWithArgOpts<'a> {
     /// Patterns to ignore when loading the contextual argument value.
     #[builder(setter(into, strip_option), default)]
     pub ignore: Option<Vec<&'a str>>,
+    /// Only include files matching these patterns.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
     /// The source map for the argument definition.
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<Id>,
@@ -9122,6 +9125,9 @@ impl Function {
         }
         if let Some(ignore) = opts.ignore {
             query = query.arg("ignore", ignore);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
         }
         if let Some(source_map) = opts.source_map {
             query = query.arg("sourceMap", source_map);
@@ -9336,6 +9342,11 @@ impl FunctionArg {
     /// Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
     pub async fn ignore(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("ignore");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Only applies to arguments of type Directory. The include patterns are applied to the input directory, and only matching entries are included, in a cache-efficient manner.
+    pub async fn include(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("include");
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the argument in lowerCamelCase format.

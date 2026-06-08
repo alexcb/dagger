@@ -594,6 +594,9 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag 
 					return updatedArg, fmt.Errorf("legacy customization arg %q ignore: %w", argSelf.Name, err)
 				}
 			}
+			if len(cust.Include) > 0 {
+				panic("ACB include here")
+			}
 			return updatedArg, nil
 		})
 		if err != nil {

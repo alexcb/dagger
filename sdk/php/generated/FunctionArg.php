@@ -79,6 +79,15 @@ class FunctionArg extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Only applies to arguments of type Directory. The include patterns are applied to the input directory, and only matching entries are included, in a cache-efficient manner.
+     */
+    public function include(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('include');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'include');
+    }
+
+    /**
      * The name of the argument in lowerCamelCase format.
      */
     public function name(): string
