@@ -161,15 +161,11 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 			return nil, fmt.Errorf("convert arg %q: %w", input.Name, err)
 		}
 
-		if len(arg.metadata.Ignore) > 0 && !arg.metadata.isContextual() { // contextual args already have ignore applied
+		if (len(arg.metadata.Ignore) > 0 || len(arg.metadata.Include) > 0) && !arg.metadata.isContextual() { // contextual args already have ignore applied
 			converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
 			if err != nil {
 				return nil, fmt.Errorf("apply ignore pattern on arg %q: %w", input.Name, err)
 			}
-		}
-
-		if len(arg.metadata.Include) > 0 && !arg.metadata.isContextual() { // contextual args already have include applied
-			fmt.Printf("ACB here with %v\n", arg.metadata.Include)
 		}
 
 		encoded, err := json.Marshal(converted)
@@ -1318,6 +1314,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 					{Name: "path", Value: dagql.String("/")},
 					{Name: "source", Value: dagql.NewID[*Directory](dirID)},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Include...))},
 				},
 			},
 		)
